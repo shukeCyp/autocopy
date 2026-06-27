@@ -9,9 +9,6 @@ dist/
 .venv/
 venv/
 
-# uv
-uv.lock
-
 # Testing
 .pytest_cache/
 .coverage
