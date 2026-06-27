@@ -1,0 +1,504 @@
+{
+  "template_id": "quick_chinese",
+  "metadata": {
+    "name": "快速复刻·中文",
+    "description": "快速复刻·Chinese — 全自动6步流程"
+  },
+  "nodes": [
+    {
+      "id": "viral_input",
+      "type": "VideoInput",
+      "label": "爆款视频",
+      "x": 100,
+      "y": 100,
+      "status": "idle",
+      "inputs": {},
+      "outputs": {
+        "video_info": {
+          "name": "video_info",
+          "port_type": "video_info",
+          "required": true,
+          "description": ""
+        }
+      },
+      "params": {
+        "path": {
+          "name": "path",
+          "param_type": "string",
+          "default": "",
+          "description": "Video file path"
+        }
+      }
+    },
+    {
+      "id": "source_input",
+      "type": "VideoInput",
+      "label": "原电影",
+      "x": 100,
+      "y": 400,
+      "status": "idle",
+      "inputs": {},
+      "outputs": {
+        "video_info": {
+          "name": "video_info",
+          "port_type": "video_info",
+          "required": true,
+          "description": ""
+        }
+      },
+      "params": {
+        "path": {
+          "name": "path",
+          "param_type": "string",
+          "default": "",
+          "description": "Video file path"
+        }
+      }
+    },
+    {
+      "id": "tts_extract",
+      "type": "TTSExtract",
+      "label": "TTS提取",
+      "x": 350,
+      "y": 100,
+      "status": "idle",
+      "inputs": {
+        "video_info": {
+          "name": "video_info",
+          "port_type": "video_info",
+          "required": true,
+          "description": ""
+        }
+      },
+      "outputs": {
+        "script_txt": {
+          "name": "script_txt",
+          "port_type": "file_path",
+          "required": true,
+          "description": "Gemini transcript text"
+        },
+        "full_srt": {
+          "name": "full_srt",
+          "port_type": "file_path",
+          "required": true,
+          "description": "Full ASR subtitles"
+        },
+        "final_srt": {
+          "name": "final_srt",
+          "port_type": "file_path",
+          "required": true,
+          "description": "Filtered TTS subtitles"
+        }
+      },
+      "params": {
+        "api_key": {
+          "name": "api_key",
+          "param_type": "string",
+          "default": "",
+          "description": ""
+        },
+        "gemini_model": {
+          "name": "gemini_model",
+          "param_type": "string",
+          "default": "gemini-3.5-flash",
+          "description": ""
+        },
+        "base_url": {
+          "name": "base_url",
+          "param_type": "string",
+          "default": "https://yunwu.ai",
+          "description": ""
+        },
+        "whisper_model": {
+          "name": "whisper_model",
+          "param_type": "string",
+          "default": ".model/ggml-large-v3-turbo.bin",
+          "description": ""
+        },
+        "vad_model": {
+          "name": "vad_model",
+          "param_type": "string",
+          "default": ".model/ggml-silero-v6.2.0.bin",
+          "description": ""
+        },
+        "vad_threshold": {
+          "name": "vad_threshold",
+          "param_type": "float",
+          "default": 0.25,
+          "description": ""
+        },
+        "min_speech_ms": {
+          "name": "min_speech_ms",
+          "param_type": "int",
+          "default": 30,
+          "description": ""
+        },
+        "min_silence_ms": {
+          "name": "min_silence_ms",
+          "param_type": "int",
+          "default": 250,
+          "description": ""
+        },
+        "min_word_overlap": {
+          "name": "min_word_overlap",
+          "param_type": "float",
+          "default": 0.85,
+          "description": ""
+        },
+        "refresh_gemini": {
+          "name": "refresh_gemini",
+          "param_type": "bool",
+          "default": false,
+          "description": ""
+        }
+      }
+    },
+    {
+      "id": "srt_rewrite",
+      "type": "SRTRewrite",
+      "label": "文案改写",
+      "x": 600,
+      "y": 100,
+      "status": "idle",
+      "inputs": {
+        "srt_path": {
+          "name": "srt_path",
+          "port_type": "file_path",
+          "required": true,
+          "description": "Input SRT file path"
+        }
+      },
+      "outputs": {
+        "rewritten_srt": {
+          "name": "rewritten_srt",
+          "port_type": "file_path",
+          "required": true,
+          "description": ""
+        }
+      },
+      "params": {
+        "api_key": {
+          "name": "api_key",
+          "param_type": "string",
+          "default": "",
+          "description": ""
+        },
+        "model": {
+          "name": "model",
+          "param_type": "string",
+          "default": "gemini-3.5-flash",
+          "description": ""
+        },
+        "base_url": {
+          "name": "base_url",
+          "param_type": "string",
+          "default": "https://yunwu.ai",
+          "description": ""
+        },
+        "target_language": {
+          "name": "target_language",
+          "param_type": "string",
+          "default": "Chinese",
+          "description": ""
+        },
+        "style": {
+          "name": "style",
+          "param_type": "string",
+          "default": "localized short-video crime recap",
+          "description": ""
+        },
+        "max_segment_seconds": {
+          "name": "max_segment_seconds",
+          "param_type": "int",
+          "default": 30,
+          "description": ""
+        },
+        "max_gap_ms": {
+          "name": "max_gap_ms",
+          "param_type": "int",
+          "default": 700,
+          "description": ""
+        }
+      }
+    },
+    {
+      "id": "video_match",
+      "type": "VideoMatch",
+      "label": "镜头匹配",
+      "x": 350,
+      "y": 400,
+      "status": "idle",
+      "inputs": {
+        "viral_video_info": {
+          "name": "viral_video_info",
+          "port_type": "video_info",
+          "required": true,
+          "description": ""
+        },
+        "source_video_info": {
+          "name": "source_video_info",
+          "port_type": "video_info",
+          "required": true,
+          "description": ""
+        }
+      },
+      "outputs": {
+        "matched_video": {
+          "name": "matched_video",
+          "port_type": "file_path",
+          "required": true,
+          "description": ""
+        },
+        "segments_json": {
+          "name": "segments_json",
+          "port_type": "file_path",
+          "required": true,
+          "description": ""
+        },
+        "review_html": {
+          "name": "review_html",
+          "port_type": "file_path",
+          "required": true,
+          "description": ""
+        }
+      },
+      "params": {
+        "use_gpu": {
+          "name": "use_gpu",
+          "param_type": "bool",
+          "default": false,
+          "description": ""
+        }
+      }
+    },
+    {
+      "id": "tts_generate",
+      "type": "TTSGenerate",
+      "label": "音频生成",
+      "x": 850,
+      "y": 100,
+      "status": "idle",
+      "inputs": {
+        "rewritten_srt": {
+          "name": "rewritten_srt",
+          "port_type": "file_path",
+          "required": true,
+          "description": ""
+        }
+      },
+      "outputs": {
+        "timeline_audio": {
+          "name": "timeline_audio",
+          "port_type": "file_path",
+          "required": true,
+          "description": ""
+        },
+        "entries_json": {
+          "name": "entries_json",
+          "port_type": "file_path",
+          "required": true,
+          "description": ""
+        }
+      },
+      "params": {
+        "api_key": {
+          "name": "api_key",
+          "param_type": "string",
+          "default": "",
+          "description": ""
+        },
+        "group_id": {
+          "name": "group_id",
+          "param_type": "string",
+          "default": "",
+          "description": ""
+        },
+        "base_url": {
+          "name": "base_url",
+          "param_type": "string",
+          "default": "https://api.minimax.chat",
+          "description": ""
+        },
+        "model": {
+          "name": "model",
+          "param_type": "string",
+          "default": "speech-02-hd",
+          "description": ""
+        },
+        "voice_id": {
+          "name": "voice_id",
+          "param_type": "string",
+          "default": "",
+          "description": ""
+        },
+        "speed": {
+          "name": "speed",
+          "param_type": "float",
+          "default": 1.0,
+          "description": ""
+        },
+        "volume": {
+          "name": "volume",
+          "param_type": "float",
+          "default": 1.0,
+          "description": ""
+        },
+        "pitch": {
+          "name": "pitch",
+          "param_type": "int",
+          "default": 0,
+          "description": ""
+        },
+        "audio_format": {
+          "name": "audio_format",
+          "param_type": "string",
+          "default": "mp3",
+          "description": ""
+        }
+      }
+    },
+    {
+      "id": "video_compose",
+      "type": "VideoCompose",
+      "label": "视频拼接",
+      "x": 850,
+      "y": 400,
+      "status": "idle",
+      "inputs": {
+        "matched_video": {
+          "name": "matched_video",
+          "port_type": "file_path",
+          "required": true,
+          "description": ""
+        },
+        "timeline_audio": {
+          "name": "timeline_audio",
+          "port_type": "file_path",
+          "required": true,
+          "description": ""
+        },
+        "tts_entries_json": {
+          "name": "tts_entries_json",
+          "port_type": "file_path",
+          "required": true,
+          "description": ""
+        }
+      },
+      "outputs": {
+        "final_video": {
+          "name": "final_video",
+          "port_type": "file_path",
+          "required": true,
+          "description": ""
+        }
+      },
+      "params": {
+        "video_codec": {
+          "name": "video_codec",
+          "param_type": "string",
+          "default": "libx264",
+          "description": ""
+        },
+        "audio_codec": {
+          "name": "audio_codec",
+          "param_type": "string",
+          "default": "aac",
+          "description": ""
+        }
+      }
+    },
+    {
+      "id": "jianying_export",
+      "type": "JianyingExport",
+      "label": "剪映导出",
+      "x": 1100,
+      "y": 400,
+      "status": "idle",
+      "inputs": {
+        "final_video": {
+          "name": "final_video",
+          "port_type": "file_path",
+          "required": true,
+          "description": ""
+        },
+        "viral_video_info": {
+          "name": "viral_video_info",
+          "port_type": "video_info",
+          "required": true,
+          "description": ""
+        }
+      },
+      "outputs": {
+        "draft_path": {
+          "name": "draft_path",
+          "port_type": "file_path",
+          "required": true,
+          "description": ""
+        }
+      },
+      "params": {}
+    }
+  ],
+  "edges": [
+    {
+      "source_node_id": "viral_input",
+      "source_port": "video_info",
+      "target_node_id": "tts_extract",
+      "target_port": "video_info"
+    },
+    {
+      "source_node_id": "tts_extract",
+      "source_port": "final_srt",
+      "target_node_id": "srt_rewrite",
+      "target_port": "srt_path"
+    },
+    {
+      "source_node_id": "viral_input",
+      "source_port": "video_info",
+      "target_node_id": "video_match",
+      "target_port": "viral_video_info"
+    },
+    {
+      "source_node_id": "source_input",
+      "source_port": "video_info",
+      "target_node_id": "video_match",
+      "target_port": "source_video_info"
+    },
+    {
+      "source_node_id": "srt_rewrite",
+      "source_port": "rewritten_srt",
+      "target_node_id": "tts_generate",
+      "target_port": "rewritten_srt"
+    },
+    {
+      "source_node_id": "video_match",
+      "source_port": "matched_video",
+      "target_node_id": "video_compose",
+      "target_port": "matched_video"
+    },
+    {
+      "source_node_id": "tts_generate",
+      "source_port": "timeline_audio",
+      "target_node_id": "video_compose",
+      "target_port": "timeline_audio"
+    },
+    {
+      "source_node_id": "tts_generate",
+      "source_port": "entries_json",
+      "target_node_id": "video_compose",
+      "target_port": "tts_entries_json"
+    },
+    {
+      "source_node_id": "video_compose",
+      "source_port": "final_video",
+      "target_node_id": "jianying_export",
+      "target_port": "final_video"
+    },
+    {
+      "source_node_id": "viral_input",
+      "source_port": "video_info",
+      "target_node_id": "jianying_export",
+      "target_port": "viral_video_info"
+    }
+  ]
+}

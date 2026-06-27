@@ -1,0 +1,214 @@
+{
+  "template_id": "tts_only",
+  "metadata": {
+    "name": "TTS提取+改写",
+    "description": "仅提取旁白并改写，不做视频处理"
+  },
+  "nodes": [
+    {
+      "id": "viral_input",
+      "type": "VideoInput",
+      "label": "爆款视频",
+      "x": 100,
+      "y": 100,
+      "status": "idle",
+      "inputs": {},
+      "outputs": {
+        "video_info": {
+          "name": "video_info",
+          "port_type": "video_info",
+          "required": true,
+          "description": ""
+        }
+      },
+      "params": {
+        "path": {
+          "name": "path",
+          "param_type": "string",
+          "default": "",
+          "description": "Video file path"
+        }
+      }
+    },
+    {
+      "id": "tts_extract",
+      "type": "TTSExtract",
+      "label": "TTS提取",
+      "x": 350,
+      "y": 100,
+      "status": "idle",
+      "inputs": {
+        "video_info": {
+          "name": "video_info",
+          "port_type": "video_info",
+          "required": true,
+          "description": ""
+        }
+      },
+      "outputs": {
+        "script_txt": {
+          "name": "script_txt",
+          "port_type": "file_path",
+          "required": true,
+          "description": "Gemini transcript text"
+        },
+        "full_srt": {
+          "name": "full_srt",
+          "port_type": "file_path",
+          "required": true,
+          "description": "Full ASR subtitles"
+        },
+        "final_srt": {
+          "name": "final_srt",
+          "port_type": "file_path",
+          "required": true,
+          "description": "Filtered TTS subtitles"
+        }
+      },
+      "params": {
+        "api_key": {
+          "name": "api_key",
+          "param_type": "string",
+          "default": "",
+          "description": ""
+        },
+        "gemini_model": {
+          "name": "gemini_model",
+          "param_type": "string",
+          "default": "gemini-3.5-flash",
+          "description": ""
+        },
+        "base_url": {
+          "name": "base_url",
+          "param_type": "string",
+          "default": "https://yunwu.ai",
+          "description": ""
+        },
+        "whisper_model": {
+          "name": "whisper_model",
+          "param_type": "string",
+          "default": ".model/ggml-large-v3-turbo.bin",
+          "description": ""
+        },
+        "vad_model": {
+          "name": "vad_model",
+          "param_type": "string",
+          "default": ".model/ggml-silero-v6.2.0.bin",
+          "description": ""
+        },
+        "vad_threshold": {
+          "name": "vad_threshold",
+          "param_type": "float",
+          "default": 0.25,
+          "description": ""
+        },
+        "min_speech_ms": {
+          "name": "min_speech_ms",
+          "param_type": "int",
+          "default": 30,
+          "description": ""
+        },
+        "min_silence_ms": {
+          "name": "min_silence_ms",
+          "param_type": "int",
+          "default": 250,
+          "description": ""
+        },
+        "min_word_overlap": {
+          "name": "min_word_overlap",
+          "param_type": "float",
+          "default": 0.85,
+          "description": ""
+        },
+        "refresh_gemini": {
+          "name": "refresh_gemini",
+          "param_type": "bool",
+          "default": false,
+          "description": ""
+        }
+      }
+    },
+    {
+      "id": "srt_rewrite",
+      "type": "SRTRewrite",
+      "label": "文案改写",
+      "x": 600,
+      "y": 100,
+      "status": "idle",
+      "inputs": {
+        "srt_path": {
+          "name": "srt_path",
+          "port_type": "file_path",
+          "required": true,
+          "description": "Input SRT file path"
+        }
+      },
+      "outputs": {
+        "rewritten_srt": {
+          "name": "rewritten_srt",
+          "port_type": "file_path",
+          "required": true,
+          "description": ""
+        }
+      },
+      "params": {
+        "api_key": {
+          "name": "api_key",
+          "param_type": "string",
+          "default": "",
+          "description": ""
+        },
+        "model": {
+          "name": "model",
+          "param_type": "string",
+          "default": "gemini-3.5-flash",
+          "description": ""
+        },
+        "base_url": {
+          "name": "base_url",
+          "param_type": "string",
+          "default": "https://yunwu.ai",
+          "description": ""
+        },
+        "target_language": {
+          "name": "target_language",
+          "param_type": "string",
+          "default": "Chinese",
+          "description": ""
+        },
+        "style": {
+          "name": "style",
+          "param_type": "string",
+          "default": "localized short-video crime recap",
+          "description": ""
+        },
+        "max_segment_seconds": {
+          "name": "max_segment_seconds",
+          "param_type": "int",
+          "default": 30,
+          "description": ""
+        },
+        "max_gap_ms": {
+          "name": "max_gap_ms",
+          "param_type": "int",
+          "default": 700,
+          "description": ""
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source_node_id": "viral_input",
+      "source_port": "video_info",
+      "target_node_id": "tts_extract",
+      "target_port": "video_info"
+    },
+    {
+      "source_node_id": "tts_extract",
+      "source_port": "final_srt",
+      "target_node_id": "srt_rewrite",
+      "target_port": "srt_path"
+    }
+  ]
+}
