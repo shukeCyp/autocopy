@@ -137,22 +137,21 @@ class TestNode:
         assert node.status == NodeStatus.DONE
 
     @pytest.mark.asyncio
-    async def test_execute_sets_status_running_then_done(self, tmp_path):
+    async def test_execute_sets_status_running_during_run(self, tmp_path):
         node = AddNode()
-        statuses = []
+        captured_status = None
 
         original_run = node.run
 
         async def tracking_run(inputs, params, work_dir):
-            statuses.append(node.status)
-            result = await original_run(inputs, params, work_dir)
-            statuses.append(node.status)
-            return result
+            nonlocal captured_status
+            captured_status = node.status
+            return await original_run(inputs, params, work_dir)
 
         node.run = tracking_run
         await node.execute({"a": 1, "b": 1}, {}, tmp_path)
-        assert statuses[0] == NodeStatus.RUNNING
-        assert statuses[1] == NodeStatus.DONE
+        assert captured_status == NodeStatus.RUNNING
+        assert node.status == NodeStatus.DONE
 
     @pytest.mark.asyncio
     async def test_execute_on_failure_sets_status_failed(self, tmp_path):

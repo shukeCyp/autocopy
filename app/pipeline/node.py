@@ -20,24 +20,6 @@ class Node(ABC):
 
     node_type: str = ""
 
-    def __init_subclass__(cls, **kwargs):
-        """Automatically wrap run() so that the DONE status transition is
-        part of the call chain visible inside run() itself.
-        """
-        super().__init_subclass__(**kwargs)
-        original_run = cls.run
-        # Guard against re-wrapping if a further subclass inherits a wrapped run.
-        if getattr(original_run, '_node_run_wrapped', False):
-            return
-
-        async def wrapped_run(self, inputs, params, work_dir):
-            result = await original_run(self, inputs, params, work_dir)
-            self.status = NodeStatus.DONE
-            return result
-
-        wrapped_run._node_run_wrapped = True
-        cls.run = wrapped_run
-
     def __init__(
         self,
         id: str | None = None,
