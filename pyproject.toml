@@ -9,13 +9,19 @@ dependencies = [
     "PyQt6-Fluent-Widgets>=1.7",
     "pycapcut>=0.0.3",
     "scipy>=1.11",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "aiosqlite>=0.20",
+    "python-multipart>=0.0.18",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+asyncio_mode = "auto"
 
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+    "httpx>=0.28",
 ]
