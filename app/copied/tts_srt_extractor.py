@@ -207,8 +207,8 @@ def extract_tts_srt(
     api_key=None,
     gemini_model="gemini-3.5-flash",
     base_url="https://yunwu.ai",
-    whisper_model=Path(".model/ggml-large-v3-turbo.bin"),
-    vad_model=Path(".model/ggml-silero-v6.2.0.bin"),
+    whisper_model=Path("model/ggml-large-v3-turbo.bin"),
+    vad_model=Path("model/ggml-silero-v6.2.0.bin"),
     vad_threshold=0.25,
     min_speech_ms=30,
     min_silence_ms=250,
@@ -252,8 +252,8 @@ def main():
     ap.add_argument("video", type=Path)
     ap.add_argument("--gemini-model", default="gemini-3.5-flash")
     ap.add_argument("--base-url", default="https://yunwu.ai")
-    ap.add_argument("--whisper-model", type=Path, default=Path(".model/ggml-large-v3-turbo.bin"))
-    ap.add_argument("--vad-model", type=Path, default=Path(".model/ggml-silero-v6.2.0.bin"))
+    ap.add_argument("--whisper-model", type=Path, default=Path("model/ggml-large-v3-turbo.bin"))
+    ap.add_argument("--vad-model", type=Path, default=Path("model/ggml-silero-v6.2.0.bin"))
     ap.add_argument("--vad-threshold", type=float, default=0.25)
     ap.add_argument("--min-word-overlap", type=float, default=0.85)
     ap.add_argument("--refresh-gemini", action="store_true")

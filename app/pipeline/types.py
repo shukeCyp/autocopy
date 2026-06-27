@@ -44,14 +44,18 @@ class ParamSpec:
     param_type: str  # "string", "float", "int", "bool", "select"
     default: Any = None
     description: str = ""
+    options: list[Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data = {
             "name": self.name,
             "param_type": self.param_type,
             "default": self.default,
             "description": self.description,
         }
+        if self.options is not None:
+            data["options"] = self.options
+        return data
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> ParamSpec:
@@ -60,6 +64,7 @@ class ParamSpec:
             param_type=d["param_type"],
             default=d.get("default"),
             description=d.get("description", ""),
+            options=d.get("options"),
         )
 
 

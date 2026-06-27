@@ -70,6 +70,28 @@ async def test_save_and_list_user_template(client):
 
 
 @pytest.mark.asyncio
+async def test_delete_user_template(client):
+    r = await client.post("/api/templates", json={
+        "name": "Delete Me",
+        "graph_json": '{"nodes":[],"edges":[]}',
+    })
+    assert r.status_code == 200
+    template_id = r.json()["id"]
+
+    r = await client.delete(f"/api/templates/{template_id}")
+    assert r.status_code == 200
+
+    r = await client.get(f"/api/templates/{template_id}")
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_builtin_template_is_rejected(client):
+    r = await client.delete("/api/templates/quick_chinese")
+    assert r.status_code == 409
+
+
+@pytest.mark.asyncio
 async def test_list_tasks_empty(client):
     r = await client.get("/api/tasks")
     assert r.status_code == 200
@@ -114,6 +136,61 @@ async def test_graph_run_creates_task(client, monkeypatch):
     r = await client.get(f"/api/tasks/{task_id}")
     assert r.status_code == 200
     assert r.json()["status"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_run_graph_marks_unsuccessful_result_failed(client, monkeypatch):
+    from app.pipeline.types import NodeResult, NodeStatus
+    from app.server.database import create_task, get_task
+    from app.server.routes import graph as graph_module
+
+    class FakeResult:
+        success = False
+        node_results = [
+            NodeResult(
+                node_id="n1",
+                status=NodeStatus.FAILED,
+                outputs={},
+                error="bad input",
+            )
+        ]
+
+        def to_dict(self):
+            return {
+                "success": self.success,
+                "node_results": [r.to_dict() for r in self.node_results],
+                "outputs": {},
+                "total_duration_ms": 0.0,
+            }
+
+    class FakeExecutor:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def run(self, graph):
+            return FakeResult()
+
+    monkeypatch.setattr(graph_module, "Executor", FakeExecutor)
+
+    graph_json = json.dumps({
+        "nodes": [{
+            "id": "n1", "type": "VideoInput", "label": "test",
+            "x": 0, "y": 0, "status": "idle",
+            "inputs": {},
+            "outputs": {"video_info": {"name": "video_info", "port_type": "video_info"}},
+            "params": {"path": {"name": "path", "param_type": "string", "default": ""}},
+        }],
+        "edges": [],
+    })
+    task = await create_task("failed task", graph_json)
+
+    await graph_module._run_graph(task["id"], graph_json)
+
+    updated = await get_task(task["id"])
+    assert updated["status"] == "failed"
+    assert updated["current_step"] == "失败"
+    assert updated["error"] == "bad input"
+    assert json.loads(updated["result_json"])["success"] is False
 
 
 @pytest.mark.asyncio

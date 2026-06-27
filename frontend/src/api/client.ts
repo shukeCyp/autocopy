@@ -31,6 +31,17 @@ export async function apiDelete(path: string): Promise<void> {
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
 }
 
+export async function apiUpload<T>(path: string, file: File): Promise<T> {
+  const body = new FormData();
+  body.append('file', file);
+  const r = await fetch(BASE + path, {
+    method: 'POST',
+    body,
+  });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+
 export function createWs(taskId: string, onEvent: (e: any) => void): WebSocket {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const ws = new WebSocket(`${proto}//${location.host}/ws/${taskId}`);

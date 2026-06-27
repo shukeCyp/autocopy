@@ -31,6 +31,8 @@ async def _run_graph(task_id: str, graph_json: str):
     await update_task(task_id, status="running", current_step="开始执行")
 
     async def on_event(event: ExecutorEvent):
+        if event.event_type == "graph_complete":
+            return
         await manager.broadcast(task_id, {
             "type": event.event_type,
             "node_id": event.node_id,
@@ -41,16 +43,23 @@ async def _run_graph(task_id: str, graph_json: str):
 
     try:
         result = await executor.run(graph)
+        error = ""
+        if not result.success:
+            error = next((r.error for r in result.node_results if r.error), "graph execution failed")
+
         await update_task(
             task_id,
-            status="done",
-            current_step="完成",
+            status="done" if result.success else "failed",
+            current_step="完成" if result.success else "失败",
             result_json=json.dumps(result.to_dict(), ensure_ascii=False),
+            error=error,
         )
         await manager.broadcast(task_id, {
             "type": "graph_complete",
             "task_id": task_id,
             "success": result.success,
+            "status": "done" if result.success else "failed",
+            "error": error,
         })
     except Exception as e:
         await update_task(task_id, status="failed", error=str(e))

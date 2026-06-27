@@ -13,6 +13,7 @@ from app.server.routes.graph import router as graph_router
 from app.server.routes.tasks import router as tasks_router
 from app.server.routes.templates import router as templates_router
 from app.server.routes.settings import router as settings_router
+from app.server.routes.files import router as files_router
 
 # Ensure nodes are registered
 _ = importlib.import_module("app.nodes")
@@ -42,11 +43,14 @@ app.include_router(graph_router)
 app.include_router(tasks_router)
 app.include_router(templates_router)
 app.include_router(settings_router)
+app.include_router(files_router)
 
 # Serve React frontend if built
 FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
-if FRONTEND_DIST.exists():
-    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
+FRONTEND_ASSETS = FRONTEND_DIST / "assets"
+FRONTEND_INDEX = FRONTEND_DIST / "index.html"
+if FRONTEND_ASSETS.exists():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_ASSETS), name="assets")
 
 
 @app.get("/api/health")
@@ -65,7 +69,7 @@ async def websocket_endpoint(websocket: WebSocket, task_id: str):
 
 
 # SPA catch-all — serve frontend for non-API routes (only if dist exists)
-if FRONTEND_DIST.exists():
+if FRONTEND_INDEX.exists():
 
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):

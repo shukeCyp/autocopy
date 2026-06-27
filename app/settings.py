@@ -11,8 +11,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "rewrite_dir": "/Users/chaiyapeng/Downloads/爆款文案洗稿",
         "video_match_dir": "/Users/chaiyapeng/Downloads/video",
         "output_dir": str(Path.cwd() / "output"),
-        "whisper_model": ".model/ggml-large-v3-turbo.bin",
-        "vad_model": ".model/ggml-silero-v6.2.0.bin",
+        "whisper_model": "ggml-large-v3-turbo.bin",
+        "vad_model": "ggml-silero-v6.2.0.bin",
     },
     "llm": {
         "provider": "Gemini网关",

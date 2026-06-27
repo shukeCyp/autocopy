@@ -5,7 +5,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
-from app.server.database import list_templates, get_template, save_template
+from app.server.database import list_templates, get_template, save_template, update_template, delete_template
 
 router = APIRouter(prefix="/api/templates", tags=["templates"])
 
@@ -72,3 +72,32 @@ async def api_save_template(body: dict):
         raise HTTPException(status_code=400, detail="name and graph_json are required")
     t = await save_template(name, graph_json)
     return {"id": t["id"], "name": t["name"]}
+
+
+@router.put("/{template_id}")
+async def api_update_template(template_id: str, body: dict):
+    name = body.get("name", "").strip()
+    graph_json = body.get("graph_json", "")
+    if not name or not graph_json:
+        raise HTTPException(status_code=400, detail="name and graph_json are required")
+
+    builtin_path = _BUILTIN_DIR / f"{template_id}.json"
+    if builtin_path.exists():
+        raise HTTPException(status_code=409, detail="built-in templates cannot be overwritten")
+
+    t = await update_template(template_id, name, graph_json)
+    if t is None:
+        raise HTTPException(status_code=404, detail="template not found")
+    return {"id": t["id"], "name": t["name"]}
+
+
+@router.delete("/{template_id}")
+async def api_delete_template(template_id: str):
+    builtin_path = _BUILTIN_DIR / f"{template_id}.json"
+    if builtin_path.exists():
+        raise HTTPException(status_code=409, detail="built-in templates cannot be deleted")
+
+    deleted = await delete_template(template_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="template not found")
+    return {"ok": True}

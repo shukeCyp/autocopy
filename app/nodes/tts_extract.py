@@ -6,6 +6,15 @@ from app.pipeline.node import Node
 from app.pipeline.types import NodeResult, NodeStatus, PortSpec, PortType, ParamSpec
 
 
+def resolve_model_path(value: str) -> Path:
+    path = Path(value)
+    if path.is_absolute() or path.parts[:1] == ("model",):
+        return path
+    if path.parent != Path("."):
+        return path
+    return Path("model") / path
+
+
 class TTSExtract(Node):
     """Extract TTS narration from a viral video using Gemini + Whisper + VAD."""
 
@@ -24,8 +33,8 @@ class TTSExtract(Node):
             "api_key": ParamSpec(name="api_key", param_type="string", default=""),
             "gemini_model": ParamSpec(name="gemini_model", param_type="string", default="gemini-3.5-flash"),
             "base_url": ParamSpec(name="base_url", param_type="string", default="https://yunwu.ai"),
-            "whisper_model": ParamSpec(name="whisper_model", param_type="string", default=".model/ggml-large-v3-turbo.bin"),
-            "vad_model": ParamSpec(name="vad_model", param_type="string", default=".model/ggml-silero-v6.2.0.bin"),
+            "whisper_model": ParamSpec(name="whisper_model", param_type="string", default="ggml-large-v3-turbo.bin"),
+            "vad_model": ParamSpec(name="vad_model", param_type="string", default="ggml-silero-v6.2.0.bin"),
             "vad_threshold": ParamSpec(name="vad_threshold", param_type="float", default=0.25),
             "min_speech_ms": ParamSpec(name="min_speech_ms", param_type="int", default=30),
             "min_silence_ms": ParamSpec(name="min_silence_ms", param_type="int", default=250),
@@ -42,8 +51,8 @@ class TTSExtract(Node):
             api_key=params["api_key"],
             gemini_model=params["gemini_model"],
             base_url=params["base_url"],
-            whisper_model=Path(params["whisper_model"]),
-            vad_model=Path(params["vad_model"]),
+            whisper_model=resolve_model_path(params["whisper_model"]),
+            vad_model=resolve_model_path(params["vad_model"]),
             vad_threshold=params["vad_threshold"],
             min_speech_ms=params["min_speech_ms"],
             min_silence_ms=params["min_silence_ms"],

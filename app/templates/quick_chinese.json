@@ -8,9 +8,9 @@
     {
       "id": "viral_input",
       "type": "VideoInput",
-      "label": "爆款视频",
-      "x": 100,
-      "y": 100,
+      "label": "Load Video",
+      "x": 80,
+      "y": 80,
       "status": "idle",
       "inputs": {},
       "outputs": {
@@ -33,9 +33,9 @@
     {
       "id": "source_input",
       "type": "VideoInput",
-      "label": "原电影",
-      "x": 100,
-      "y": 400,
+      "label": "Load Video",
+      "x": 80,
+      "y": 500,
       "status": "idle",
       "inputs": {},
       "outputs": {
@@ -59,8 +59,8 @@
       "id": "tts_extract",
       "type": "TTSExtract",
       "label": "TTS提取",
-      "x": 350,
-      "y": 100,
+      "x": 460,
+      "y": 60,
       "status": "idle",
       "inputs": {
         "video_info": {
@@ -112,13 +112,13 @@
         "whisper_model": {
           "name": "whisper_model",
           "param_type": "string",
-          "default": ".model/ggml-large-v3-turbo.bin",
+          "default": "ggml-large-v3-turbo.bin",
           "description": ""
         },
         "vad_model": {
           "name": "vad_model",
           "param_type": "string",
-          "default": ".model/ggml-silero-v6.2.0.bin",
+          "default": "ggml-silero-v6.2.0.bin",
           "description": ""
         },
         "vad_threshold": {
@@ -157,8 +157,8 @@
       "id": "srt_rewrite",
       "type": "SRTRewrite",
       "label": "文案改写",
-      "x": 600,
-      "y": 100,
+      "x": 880,
+      "y": 60,
       "status": "idle",
       "inputs": {
         "srt_path": {
@@ -225,8 +225,8 @@
       "id": "video_match",
       "type": "VideoMatch",
       "label": "镜头匹配",
-      "x": 350,
-      "y": 400,
+      "x": 460,
+      "y": 500,
       "status": "idle",
       "inputs": {
         "viral_video_info": {
@@ -275,8 +275,8 @@
       "id": "tts_generate",
       "type": "TTSGenerate",
       "label": "音频生成",
-      "x": 850,
-      "y": 100,
+      "x": 1300,
+      "y": 60,
       "status": "idle",
       "inputs": {
         "rewritten_srt": {
@@ -361,8 +361,8 @@
       "id": "video_compose",
       "type": "VideoCompose",
       "label": "视频拼接",
-      "x": 850,
-      "y": 400,
+      "x": 1300,
+      "y": 500,
       "status": "idle",
       "inputs": {
         "matched_video": {
@@ -411,8 +411,8 @@
       "id": "jianying_export",
       "type": "JianyingExport",
       "label": "剪映导出",
-      "x": 1100,
-      "y": 400,
+      "x": 1720,
+      "y": 420,
       "status": "idle",
       "inputs": {
         "final_video": {

@@ -3,7 +3,7 @@ export interface PortSpec {
 }
 
 export interface ParamSpec {
-  name: string; param_type: string; default: any; description: string;
+  name: string; param_type: string; default: any; description: string; options?: any[];
 }
 
 export interface NodeData {

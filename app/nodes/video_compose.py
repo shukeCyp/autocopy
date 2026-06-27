@@ -22,8 +22,8 @@ class VideoCompose(Node):
             "final_video": PortSpec(name="final_video", port_type=PortType.FILE_PATH),
         }
         self.params = {
-            "video_codec": ParamSpec(name="video_codec", param_type="string", default="libx264"),
-            "audio_codec": ParamSpec(name="audio_codec", param_type="string", default="aac"),
+            "video_codec": ParamSpec(name="video_codec", param_type="select", default="libx264", options=["libx264", "h264_videotoolbox", "copy"]),
+            "audio_codec": ParamSpec(name="audio_codec", param_type="select", default="aac", options=["aac", "copy"]),
         }
 
     async def run(self, inputs, params, work_dir):

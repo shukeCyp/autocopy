@@ -24,12 +24,12 @@ class TTSGenerate(Node):
             "api_key": ParamSpec(name="api_key", param_type="string", default=""),
             "group_id": ParamSpec(name="group_id", param_type="string", default=""),
             "base_url": ParamSpec(name="base_url", param_type="string", default="https://api.minimax.chat"),
-            "model": ParamSpec(name="model", param_type="string", default="speech-02-hd"),
+            "model": ParamSpec(name="model", param_type="select", default="speech-02-hd", options=["speech-02-hd", "speech-02-turbo"]),
             "voice_id": ParamSpec(name="voice_id", param_type="string", default=""),
             "speed": ParamSpec(name="speed", param_type="float", default=1.0),
             "volume": ParamSpec(name="volume", param_type="float", default=1.0),
             "pitch": ParamSpec(name="pitch", param_type="int", default=0),
-            "audio_format": ParamSpec(name="audio_format", param_type="string", default="mp3"),
+            "audio_format": ParamSpec(name="audio_format", param_type="select", default="mp3", options=["mp3", "wav", "m4a"]),
         }
 
     async def run(self, inputs, params, work_dir):

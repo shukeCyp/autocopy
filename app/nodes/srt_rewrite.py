@@ -22,7 +22,7 @@ class SRTRewrite(Node):
             "api_key": ParamSpec(name="api_key", param_type="string", default=""),
             "model": ParamSpec(name="model", param_type="string", default="gemini-3.5-flash"),
             "base_url": ParamSpec(name="base_url", param_type="string", default="https://yunwu.ai"),
-            "target_language": ParamSpec(name="target_language", param_type="string", default="Chinese"),
+            "target_language": ParamSpec(name="target_language", param_type="select", default="Chinese", options=["Chinese", "English"]),
             "style": ParamSpec(name="style", param_type="string", default="localized short-video crime recap"),
             "max_segment_seconds": ParamSpec(name="max_segment_seconds", param_type="int", default=30),
             "max_gap_ms": ParamSpec(name="max_gap_ms", param_type="int", default=700),

@@ -8,9 +8,9 @@
     {
       "id": "viral_input",
       "type": "VideoInput",
-      "label": "爆款视频",
+      "label": "Load Video",
       "x": 100,
-      "y": 100,
+      "y": 180,
       "status": "idle",
       "inputs": {},
       "outputs": {
@@ -34,8 +34,8 @@
       "id": "tts_extract",
       "type": "TTSExtract",
       "label": "TTS提取",
-      "x": 350,
-      "y": 100,
+      "x": 520,
+      "y": 120,
       "status": "idle",
       "inputs": {
         "video_info": {
@@ -87,13 +87,13 @@
         "whisper_model": {
           "name": "whisper_model",
           "param_type": "string",
-          "default": ".model/ggml-large-v3-turbo.bin",
+          "default": "ggml-large-v3-turbo.bin",
           "description": ""
         },
         "vad_model": {
           "name": "vad_model",
           "param_type": "string",
-          "default": ".model/ggml-silero-v6.2.0.bin",
+          "default": "ggml-silero-v6.2.0.bin",
           "description": ""
         },
         "vad_threshold": {
@@ -132,8 +132,8 @@
       "id": "srt_rewrite",
       "type": "SRTRewrite",
       "label": "文案改写",
-      "x": 600,
-      "y": 100,
+      "x": 980,
+      "y": 120,
       "status": "idle",
       "inputs": {
         "srt_path": {

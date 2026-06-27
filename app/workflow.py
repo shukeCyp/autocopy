@@ -172,6 +172,15 @@ def compose_timed_audio(entries: list[dict[str, Any]], audio_paths: list[Path], 
     return output_path
 
 
+def resolve_model_path(value: str | Path) -> Path:
+    path = Path(value)
+    if path.is_absolute() or path.parts[:1] == ("model",):
+        return path
+    if path.parent != Path("."):
+        return path
+    return Path("model") / path
+
+
 def run_pipeline(inputs: HotCopyInputs, settings: dict[str, Any], progress: Callable[[str], None] | None = None) -> dict[str, str]:
     progress = progress or (lambda message: None)
     output_dir = Path(inputs.output_dir or settings["paths"]["output_dir"])
@@ -184,8 +193,8 @@ def run_pipeline(inputs: HotCopyInputs, settings: dict[str, Any], progress: Call
         api_key=settings["llm"]["api_key"],
         gemini_model=settings["llm"]["model"],
         base_url=settings["llm"]["base_url"],
-        whisper_model=Path(settings["paths"]["whisper_model"]),
-        vad_model=Path(settings["paths"]["vad_model"]),
+        whisper_model=resolve_model_path(settings["paths"]["whisper_model"]),
+        vad_model=resolve_model_path(settings["paths"]["vad_model"]),
         vad_threshold=settings["vad"]["threshold"],
         min_speech_ms=settings["vad"]["min_speech_ms"],
         min_silence_ms=settings["vad"]["min_silence_ms"],

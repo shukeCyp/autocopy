@@ -168,3 +168,26 @@ async def save_template(name: str, graph_json: str) -> dict:
     await db.commit()
     await db.close()
     return await get_template(template_id)
+
+
+async def update_template(template_id: str, name: str, graph_json: str) -> dict | None:
+    db = await get_db()
+    cursor = await db.execute(
+        "UPDATE templates SET name = ?, graph_json = ? WHERE id = ?",
+        (name, graph_json, template_id),
+    )
+    await db.commit()
+    updated = cursor.rowcount > 0
+    await db.close()
+    if not updated:
+        return None
+    return await get_template(template_id)
+
+
+async def delete_template(template_id: str) -> bool:
+    db = await get_db()
+    cursor = await db.execute("DELETE FROM templates WHERE id = ?", (template_id,))
+    await db.commit()
+    deleted = cursor.rowcount > 0
+    await db.close()
+    return deleted

@@ -1,61 +1,218 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import type React from 'react';
+import {
+  ApartmentOutlined,
+  AudioOutlined,
+  BranchesOutlined,
+  CloseOutlined,
+  CopyOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  ExportOutlined,
+  FolderOpenOutlined,
+  HistoryOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+  MoonOutlined,
+  NodeIndexOutlined,
+  ScissorOutlined,
+  SettingOutlined,
+  SoundOutlined,
+  SunOutlined,
+  VideoCameraOutlined,
+} from '@ant-design/icons';
 import { useStore } from '../stores/useStore';
-import { apiGet, apiDelete } from '../api/client';
+import { apiGet, apiPost, apiDelete } from '../api/client';
 import type { Task, Template, NodeData, EdgeData } from '../types';
+import { nodeLabel, t as tr } from '../i18n';
+
+type DrawerTab = 'workflows' | 'tasks' | 'nodes' | 'settings';
+
+const TAB_META: Record<DrawerTab, { icon: React.ReactNode; zh: string; en: string }> = {
+  workflows: { icon: <ApartmentOutlined />, zh: '工作流', en: 'Workflows' },
+  tasks: { icon: <HistoryOutlined />, zh: '任务记录', en: 'Tasks' },
+  nodes: { icon: <NodeIndexOutlined />, zh: '节点库', en: 'Nodes' },
+  settings: { icon: <SettingOutlined />, zh: '设置', en: 'Settings' },
+};
+
+const NODE_TYPES = ['VideoInput', 'TTSExtract', 'SRTRewrite', 'VideoMatch', 'TTSGenerate', 'VideoCompose', 'JianyingExport'];
+
+const NODE_TYPE_ICONS: Record<string, React.ReactNode> = {
+  VideoInput: <VideoCameraOutlined />,
+  TTSExtract: <AudioOutlined />,
+  SRTRewrite: <EditOutlined />,
+  VideoMatch: <BranchesOutlined />,
+  TTSGenerate: <SoundOutlined />,
+  VideoCompose: <ScissorOutlined />,
+  JianyingExport: <ExportOutlined />,
+};
 
 export default function Sidebar() {
+  const [collapsed, setCollapsed] = useState(false);
+  const [activeTab, setActiveTab] = useState<DrawerTab>('workflows');
+  const [loadingTemplateId, setLoadingTemplateId] = useState<string | null>(null);
+  const [creatingWorkflow, setCreatingWorkflow] = useState(false);
+  const [workflowMenu, setWorkflowMenu] = useState<{ template: Template; x: number; y: number } | null>(null);
+  const [sidebarError, setSidebarError] = useState<string>('');
   const {
-    tasks, currentTaskId, setTasks, setCurrentTaskId, setGraph,
-    templates, setTemplates,
+    tasks,
+    currentTaskId,
+    setTasks,
+    setCurrentTaskId,
+    setGraph,
+    replaceGraph,
+    templates,
+    activeTemplateId,
+    setTemplates,
+    nodes,
+    edges,
+    language,
+    setLanguage,
+    theme,
+    setTheme,
   } = useStore();
 
-  // Load templates on mount
-  useEffect(() => {
-    apiGet<Template[]>('/templates').then(setTemplates).catch(() => {});
-  }, []);
+  const label = (tab: DrawerTab) => language === 'zh' ? TAB_META[tab].zh : TAB_META[tab].en;
 
-  // Load tasks on mount
+  const refreshTemplates = async () => {
+    const refreshed = await apiGet<Template[]>('/templates');
+    setTemplates(refreshed);
+    return refreshed;
+  };
+
+  useEffect(() => {
+    refreshTemplates()
+      .then((data) => {
+        setTemplates(data);
+        setSidebarError('');
+      })
+      .catch(() => setSidebarError(tr(language, 'sidebar.templatesLoadFailed')));
+  }, [language, setTemplates]);
+
   useEffect(() => {
     apiGet<Task[]>('/tasks').then(setTasks).catch(() => {});
-  }, []);
+  }, [setTasks]);
 
-  const loadTemplate = async (t: Template) => {
+  const templateNodeSamples = useMemo(() => {
+    const samples = new Map<string, NodeData>();
+    for (const template of templates) {
+      if (!template.graph_json) continue;
+      try {
+        const graph = JSON.parse(template.graph_json);
+        for (const node of graph.nodes || []) {
+          if (!samples.has(node.type)) samples.set(node.type, node);
+        }
+      } catch {}
+    }
+    return samples;
+  }, [templates]);
+
+  const loadTemplate = async (template: Template) => {
+    setLoadingTemplateId(template.id);
+    setSidebarError('');
     try {
-      const data = await apiGet<Template & { graph_json: string }>(`/templates/${t.id}`);
-      const g = JSON.parse(data.graph_json || '{}');
-      const newNodes: NodeData[] = (g.nodes || []).map((n: any) => ({
-        ...n,
+      const data = template.graph_json
+        ? (template as Template & { graph_json: string })
+        : await apiGet<Template & { graph_json: string }>(`/templates/${template.id}`);
+      const graph = JSON.parse(data.graph_json || '{}');
+      const newNodes: NodeData[] = (graph.nodes || []).map((node: any) => ({
+        ...node,
         status: 'idle' as const,
         paramValues: {},
       }));
-      const newEdges: EdgeData[] = (g.edges || []).map((e: any) => ({
-        source_node_id: e.source_node_id, source_port: e.source_port,
-        target_node_id: e.target_node_id, target_port: e.target_port,
+      const newEdges: EdgeData[] = (graph.edges || []).map((edge: any) => ({
+        source_node_id: edge.source_node_id,
+        source_port: edge.source_port,
+        target_node_id: edge.target_node_id,
+        target_port: edge.target_port,
       }));
-      setGraph(newNodes, newEdges);
+      replaceGraph(newNodes, newEdges, template.id, template.builtin, template.name);
       setCurrentTaskId(null);
-    } catch (e) {
-      console.error('load template failed:', e);
+    } catch (error) {
+      console.error('load template failed:', error);
+      setSidebarError(`${tr(language, 'sidebar.templateLoadFailed')}：${template.name}`);
+    } finally {
+      setLoadingTemplateId(null);
+    }
+  };
+
+  const createBlankWorkflow = async () => {
+    if (creatingWorkflow) return;
+    setCreatingWorkflow(true);
+    setSidebarError('');
+    const name = language === 'zh' ? '未命名工作流' : 'Untitled Workflow';
+    const graph_json = JSON.stringify({ nodes: [], edges: [] });
+    try {
+      const saved = await apiPost<{ id: string; name: string }>('/templates', { name, graph_json });
+      replaceGraph([], [], saved.id, false, saved.name);
+      setCurrentTaskId(null);
+      await refreshTemplates();
+    } catch (error) {
+      console.error('create workflow failed:', error);
+      setSidebarError(tr(language, 'sidebar.workflowCreateFailed'));
+    } finally {
+      setCreatingWorkflow(false);
+    }
+  };
+
+  const copyWorkflow = async (template: Template) => {
+    setWorkflowMenu(null);
+    setSidebarError('');
+    try {
+      const data = template.graph_json
+        ? (template as Template & { graph_json: string })
+        : await apiGet<Template & { graph_json: string }>(`/templates/${template.id}`);
+      const saved = await apiPost<{ id: string; name: string }>('/templates', {
+        name: `${template.name} Copy`,
+        graph_json: data.graph_json,
+      });
+      await refreshTemplates();
+      await loadTemplate({ ...template, id: saved.id, name: saved.name, builtin: false, graph_json: data.graph_json });
+    } catch (error) {
+      console.error('copy workflow failed:', error);
+      setSidebarError(tr(language, 'sidebar.workflowCopyFailed'));
+    }
+  };
+
+  const deleteWorkflow = async (template: Template) => {
+    setWorkflowMenu(null);
+    if (template.builtin) return;
+    setSidebarError('');
+    try {
+      await apiDelete(`/templates/${template.id}`);
+      if (activeTemplateId === template.id) {
+        replaceGraph([], [], null, false, '');
+        setCurrentTaskId(null);
+      }
+      await refreshTemplates();
+    } catch (error) {
+      console.error('delete workflow failed:', error);
+      setSidebarError(tr(language, 'sidebar.workflowDeleteFailed'));
     }
   };
 
   const loadTask = async (task: Task) => {
     setCurrentTaskId(task.id);
     try {
-      const t = await apiGet<Task & { graph_json: string }>(`/tasks/${task.id}`);
-      const g = JSON.parse(typeof t.graph_json === 'string' ? t.graph_json : JSON.stringify(t.graph_json));
-      setGraph(
-        (g.nodes || []).map((n: any) => ({ ...n, paramValues: n.paramValues || {} })),
-        (g.edges || []).map((e: any) => ({
-          source_node_id: e.source_node_id, source_port: e.source_port,
-          target_node_id: e.target_node_id, target_port: e.target_port,
-        }))
+      const data = await apiGet<Task & { graph_json: string }>(`/tasks/${task.id}`);
+      const graph = JSON.parse(typeof data.graph_json === 'string' ? data.graph_json : JSON.stringify(data.graph_json));
+      replaceGraph(
+        (graph.nodes || []).map((node: any) => ({ ...node, paramValues: node.paramValues || {} })),
+        (graph.edges || []).map((edge: any) => ({
+          source_node_id: edge.source_node_id,
+          source_port: edge.source_port,
+          target_node_id: edge.target_node_id,
+          target_port: edge.target_port,
+        })),
+        null,
+        false,
+        task.name || task.id
       );
     } catch {}
   };
 
-  const deleteTask = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const deleteTask = async (id: string, event: React.MouseEvent) => {
+    event.stopPropagation();
     await apiDelete(`/tasks/${id}`);
     if (currentTaskId === id) {
       setCurrentTaskId(null);
@@ -64,87 +221,200 @@ export default function Sidebar() {
     apiGet<Task[]>('/tasks').then(setTasks).catch(() => {});
   };
 
-  const handleNewWorkflow = () => {
-    // Load the first template (quick Chinese) by default
-    if (templates.length > 0) {
-      loadTemplate(templates[0]);
-    }
+  const addNode = (nodeType: string) => {
+    const sample = templateNodeSamples.get(nodeType);
+    const base: NodeData = sample
+      ? JSON.parse(JSON.stringify(sample))
+      : {
+          id: nodeType,
+          type: nodeType,
+          label: nodeType,
+          x: 160,
+          y: 160,
+          status: 'idle',
+          inputs: {},
+          outputs: {},
+          params: {},
+        };
+    const id = `${nodeType.toLowerCase()}_${Date.now().toString(36)}`;
+    const nextNode: NodeData = {
+      ...base,
+      id,
+      x: 160 + nodes.length * 28,
+      y: 120 + nodes.length * 28,
+      status: 'idle',
+      error: undefined,
+      outputs_cache: undefined,
+      paramValues: {},
+    };
+    setGraph([...nodes, nextNode], edges);
   };
 
-  const STATUS_COLORS: Record<string, string> = {
-    pending: 'text-yellow-400', running: 'text-blue-400',
-    done: 'text-green-400', failed: 'text-red-400',
-  };
-
-  const ICONS: Record<string, string> = {
-    quick_chinese: '🇨🇳', quick_english: '🇺🇸', tts_only: '🎤',
-  };
-
-  return (
-    <div className="w-60 bg-gray-950 border-r border-gray-800 flex flex-col flex-shrink-0 overflow-y-auto">
-      {/* Workflows section */}
-      <div className="p-3 border-b border-gray-800">
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">工作流模板</div>
+  const renderWorkflows = () => (
+    <div className="drawer-panel-scroll" onClick={() => setWorkflowMenu(null)}>
+      <div className="drawer-section-head">
+        <span>{tr(language, 'sidebar.workflows')}</span>
+        <span className="drawer-section-actions">
+          <button className="drawer-small-button primary" onClick={createBlankWorkflow} disabled={creatingWorkflow}>
+            {creatingWorkflow ? tr(language, 'sidebar.loading') : tr(language, 'sidebar.newWorkflow')}
+          </button>
+        </span>
+      </div>
+      {sidebarError && <div className="drawer-error">{sidebarError}</div>}
+      {templates.map((template) => (
+        <button
+          key={template.id}
+          onClick={() => loadTemplate(template)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            setWorkflowMenu({ template, x: event.clientX, y: event.clientY });
+          }}
+          disabled={loadingTemplateId !== null}
+          className={`drawer-list-item ${activeTemplateId === template.id ? 'active' : ''}`}
+        >
+          <span className="drawer-list-icon workflow-icon"><ApartmentOutlined /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-xs font-semibold">{loadingTemplateId === template.id ? tr(language, 'sidebar.loading') : template.name}</span>
+            <span className="block truncate text-[10px] opacity-65">
+              {template.builtin ? `${tr(language, 'sidebar.builtin')} · ` : ''}{template.id === 'tts_only' ? tr(language, 'sidebar.ttsOnly') : tr(language, 'sidebar.fullFlow')}
+            </span>
+          </span>
+        </button>
+      ))}
+      {workflowMenu && (
+        <div
+          className="drawer-context-menu"
+          style={{ left: workflowMenu.x, top: workflowMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button onClick={() => loadTemplate(workflowMenu.template)}>
+            <FolderOpenOutlined />
+            <span>{tr(language, 'context.open')}</span>
+          </button>
+          <button onClick={() => copyWorkflow(workflowMenu.template)}>
+            <CopyOutlined />
+            <span>{tr(language, 'context.duplicate')}</span>
+          </button>
           <button
-            onClick={handleNewWorkflow}
-            className="text-[10px] text-blue-400 hover:text-blue-300"
+            className="danger"
+            disabled={workflowMenu.template.builtin}
+            onClick={() => deleteWorkflow(workflowMenu.template)}
           >
-            + 加载默认
+            <DeleteOutlined />
+            <span>{tr(language, 'context.delete')}</span>
           </button>
         </div>
-        {templates.map((t) => (
-          <div
-            key={t.id}
-            onClick={() => loadTemplate(t)}
-            className="p-2.5 mb-1.5 rounded-lg cursor-pointer border transition-colors bg-gray-800/50 border-gray-700 hover:border-blue-500 hover:bg-gray-800"
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-sm">{ICONS[t.id] || '📦'}</span>
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-medium text-gray-200 truncate">{t.name}</div>
-                <div className="text-[10px] text-gray-500">{t.builtin ? '内置 · ' : ''}{t.id === 'quick_chinese' ? '6步全流程' : t.id === 'quick_english' ? '6步全流程' : '仅TTS'}</div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Task history section */}
-      <div className="flex-1 flex flex-col">
-        <div className="p-3 text-[10px] text-gray-500 uppercase tracking-wider font-semibold sticky top-0 bg-gray-950">
-          任务历史
-        </div>
-        <div className="flex-1 overflow-y-auto">
-          {tasks.map((t) => (
-            <div
-              key={t.id}
-              onClick={() => loadTask(t)}
-              className={`px-3 py-2.5 cursor-pointer border-l-2 text-xs ${
-                currentTaskId === t.id
-                  ? 'border-blue-500 bg-blue-900/20 text-white'
-                  : 'border-transparent hover:bg-gray-900 text-gray-300'
-              }`}
-            >
-              <div className="truncate font-medium">{t.name || t.id.slice(0, 16)}</div>
-              <div className="flex items-center justify-between mt-0.5">
-                <span className={`${STATUS_COLORS[t.status] || 'text-gray-500'} text-[10px]`}>
-                  {t.status === 'done' ? '✓ 完成' : t.status === 'running' ? '⟳ 运行中' : t.status === 'failed' ? '✗ 失败' : t.status}
-                </span>
-                <button
-                  onClick={(e) => deleteTask(t.id, e)}
-                  className="text-[10px] text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100"
-                >
-                  🗑
-                </button>
-              </div>
-            </div>
-          ))}
-          {tasks.length === 0 && (
-            <div className="px-3 py-4 text-[10px] text-gray-600 text-center">暂无历史任务</div>
-          )}
-        </div>
-      </div>
+      )}
     </div>
+  );
+
+  const renderTasks = () => (
+    <div className="drawer-panel-scroll">
+      <div className="drawer-section-head"><span>{tr(language, 'sidebar.tasks')}</span></div>
+      {tasks.map((task) => (
+        <button
+          key={task.id}
+          onClick={() => loadTask(task)}
+          className={`drawer-list-item group ${currentTaskId === task.id ? 'active' : ''}`}
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-xs font-semibold">{task.name || task.id.slice(0, 16)}</span>
+            <span className={`block text-[10px] ${task.status === 'failed' ? 'text-red-400' : task.status === 'done' ? 'text-green-400' : 'opacity-65'}`}>
+              {task.status}
+            </span>
+          </span>
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(event) => deleteTask(task.id, event as any)}
+            className="drawer-delete"
+          >
+            <DeleteOutlined />
+          </span>
+        </button>
+      ))}
+      {tasks.length === 0 && <div className="drawer-empty">{tr(language, 'sidebar.emptyTasks')}</div>}
+    </div>
+  );
+
+  const renderNodes = () => (
+    <div className="drawer-panel-scroll">
+      <div className="drawer-section-head"><span>{label('nodes')}</span></div>
+      {NODE_TYPES.map((nodeType) => (
+        <button key={nodeType} className="drawer-list-item" onClick={() => addNode(nodeType)}>
+          <span className="drawer-list-icon">{NODE_TYPE_ICONS[nodeType] || <NodeIndexOutlined />}</span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-xs font-semibold">{nodeLabel(language, nodeType, nodeType)}</span>
+            <span className="block truncate text-[10px] opacity-65">{nodeType}</span>
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+
+  const renderSettings = () => (
+    <div className="drawer-panel-scroll">
+      <div className="drawer-section-head"><span>{label('settings')}</span></div>
+      <label className="drawer-setting-row">
+        <span>{language === 'zh' ? '语言' : 'Language'}</span>
+        <select value={language} onChange={(event) => setLanguage(event.target.value as any)}>
+          <option value="zh">中文</option>
+          <option value="en">English</option>
+        </select>
+      </label>
+      <label className="drawer-setting-row">
+        <span>{language === 'zh' ? '主题' : 'Theme'}</span>
+        <select value={theme} onChange={(event) => setTheme(event.target.value as any)}>
+          <option value="dark">{language === 'zh' ? '黑夜' : 'Dark'}</option>
+          <option value="light">{language === 'zh' ? '白天' : 'Light'}</option>
+        </select>
+      </label>
+    </div>
+  );
+
+  const panel = {
+    workflows: renderWorkflows,
+    tasks: renderTasks,
+    nodes: renderNodes,
+    settings: renderSettings,
+  }[activeTab]();
+
+  return (
+    <aside className={`drawer ${collapsed ? 'collapsed' : ''}`}>
+      <div className="drawer-rail">
+        <button
+          className="drawer-toggle"
+          aria-label={collapsed ? (language === 'zh' ? '展开抽屉' : 'Expand drawer') : (language === 'zh' ? '收起抽屉' : 'Collapse drawer')}
+          onClick={() => setCollapsed(!collapsed)}
+        >
+          {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+        </button>
+        {(Object.keys(TAB_META) as DrawerTab[]).map((tab) => (
+          <button
+            key={tab}
+            aria-label={label(tab)}
+            onClick={() => {
+              setActiveTab(tab);
+              if (collapsed) setCollapsed(false);
+            }}
+            className={`drawer-rail-button ${activeTab === tab ? 'active' : ''}`}
+          >
+            {TAB_META[tab].icon}
+          </button>
+        ))}
+        <button className="drawer-rail-button mt-auto" aria-label={theme === 'dark' ? 'Light' : 'Dark'} onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+          {theme === 'dark' ? <MoonOutlined /> : <SunOutlined />}
+        </button>
+      </div>
+      {!collapsed && (
+        <div className="drawer-panel">
+          <div className="drawer-panel-title">
+            <span>{label(activeTab)}</span>
+            <button onClick={() => setCollapsed(true)}><CloseOutlined /></button>
+          </div>
+          {panel}
+        </div>
+      )}
+    </aside>
   );
 }
