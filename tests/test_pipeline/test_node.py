@@ -156,11 +156,14 @@ class TestNode:
     @pytest.mark.asyncio
     async def test_execute_on_failure_sets_status_failed(self, tmp_path):
         node = FailingNode()
-        try:
+        with pytest.raises(RuntimeError):
             await node.execute({}, {}, tmp_path)
-        except RuntimeError:
-            pass
         assert node.status == NodeStatus.FAILED
+
+    def test_from_dict_unknown_type_raises(self):
+        d = {"id": "n1", "type": "UnknownType", "label": "x", "x": 0, "y": 0, "status": "idle", "inputs": {}, "outputs": {}, "params": {}}
+        with pytest.raises(ValueError, match="Unknown node type"):
+            Node.from_dict(d)
 
     def test_cache_key_is_stable(self):
         node = AddNode()

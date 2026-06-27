@@ -99,9 +99,9 @@ class Node(ABC):
     @staticmethod
     def from_dict(d: dict[str, Any]) -> Node:
         """Reconstruct a Node from its dict representation.
-        Note: This reconstructs the interface (ports/params) but does NOT
-        restore a concrete subclass. Callers should use a registry to
-        look up the correct class by d['type'].
+
+        Looks up the concrete subclass in _NODE_REGISTRY by d['type'].
+        Raises ValueError if the type is not registered.
         """
         class_name = d["type"]
         node_cls = _NODE_REGISTRY.get(class_name)
