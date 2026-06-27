@@ -8,6 +8,7 @@ dependencies = [
     "PyQt6>=6.7",
     "PyQt6-Fluent-Widgets>=1.7",
     "pycapcut>=0.0.3",
+    "pywebview>=5.4",
     "scipy>=1.11",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.34",

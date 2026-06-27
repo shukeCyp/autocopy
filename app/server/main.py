@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import importlib
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.server.websocket import manager
 from app.server.routes.graph import router as graph_router
@@ -41,6 +43,11 @@ app.include_router(tasks_router)
 app.include_router(templates_router)
 app.include_router(settings_router)
 
+# Serve React frontend if built
+FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+if FRONTEND_DIST.exists():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
+
 
 @app.get("/api/health")
 async def health():
@@ -55,3 +62,17 @@ async def websocket_endpoint(websocket: WebSocket, task_id: str):
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(task_id, websocket)
+
+
+# SPA catch-all — serve frontend for non-API routes (only if dist exists)
+if FRONTEND_DIST.exists():
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        """Serve React SPA — return index.html for all non-API routes."""
+        from fastapi.responses import FileResponse
+
+        file_path = FRONTEND_DIST / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+        return FileResponse(FRONTEND_DIST / "index.html")
