@@ -59,6 +59,7 @@ async def test_settings_roundtrip(client):
 async def test_save_and_list_user_template(client):
     r = await client.post("/api/templates", json={
         "name": "My Custom",
+        "description": "My workflow description",
         "graph_json": '{"nodes":[],"edges":[]}',
     })
     assert r.status_code == 200
@@ -67,6 +68,19 @@ async def test_save_and_list_user_template(client):
     r = await client.get(f"/api/templates/{template_id}")
     assert r.status_code == 200
     assert r.json()["name"] == "My Custom"
+    assert r.json()["description"] == "My workflow description"
+
+    r = await client.get("/api/templates")
+    listed = next(t for t in r.json() if t["id"] == template_id)
+    assert listed["description"] == "My workflow description"
+
+    r = await client.put(f"/api/templates/{template_id}", json={
+        "name": "My Custom",
+        "description": "Updated description",
+        "graph_json": '{"nodes":[],"edges":[]}',
+    })
+    assert r.status_code == 200
+    assert r.json()["description"] == "Updated description"
 
 
 @pytest.mark.asyncio

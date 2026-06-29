@@ -11,7 +11,6 @@ import sys
 import threading
 import time
 import logging
-from pathlib import Path
 
 import uvicorn
 import webview
@@ -54,7 +53,7 @@ def main():
     logger.info(f"backend ready at {url}")
     logger.info("opening desktop window...")
 
-    # Open native window
+    # Open native window maximized by default.
     window = webview.create_window(
         title="TK 爆款复刻",
         url=url,
@@ -63,9 +62,13 @@ def main():
         min_size=(900, 600),
         resizable=True,
         fullscreen=False,
+        maximized=True,
     )
 
-    webview.start(gui="cocoa" if sys.platform == "darwin" else None)
+    def maximize_window():
+        window.maximize()
+
+    webview.start(maximize_window, gui="cocoa" if sys.platform == "darwin" else None)
     logger.info("window closed, exiting")
 
 

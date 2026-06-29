@@ -246,6 +246,14 @@ export default function Canvas() {
     [graphNodes, graphEdges, setGraph]
   );
 
+  const onNodeDragStart = useCallback(
+    (_: any, node: Node) => {
+      setContextMenu(null);
+      setSelectedNodeId(node.id);
+    },
+    [setSelectedNodeId]
+  );
+
   const onConnect = useCallback(
     (conn: Connection) => {
       if (!conn.source || !conn.target || !conn.sourceHandle || !conn.targetHandle) return;
@@ -403,6 +411,7 @@ export default function Canvas() {
         edges={edgesState}
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
+        onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onConnect={onConnect}
         onConnectStart={onConnectStart}
@@ -432,7 +441,7 @@ export default function Canvas() {
         proOptions={{ hideAttribution: true }}
       >
         <Background color="#2b2c30" gap={18} size={1} />
-        <Controls className="!bg-[#232428] !border !border-[#3c3d42] !rounded" />
+        <Controls />
       </ReactFlow>
       {contextMenu && (
         <div

@@ -38,10 +38,15 @@ async def _ensure_schema(db: aiosqlite.Connection) -> None:
         CREATE TABLE IF NOT EXISTS templates (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
             graph_json TEXT NOT NULL,
             created_at TEXT NOT NULL
         );
     """)
+    columns = await db.execute("PRAGMA table_info(templates)")
+    column_names = {row["name"] for row in await columns.fetchall()}
+    if "description" not in column_names:
+        await db.execute("ALTER TABLE templates ADD COLUMN description TEXT NOT NULL DEFAULT ''")
     await db.commit()
 
 
@@ -140,7 +145,7 @@ async def save_settings(settings: dict) -> dict:
 
 async def list_templates() -> list[dict]:
     db = await get_db()
-    rows = await db.execute("SELECT id, name, created_at FROM templates ORDER BY created_at DESC")
+    rows = await db.execute("SELECT id, name, description, created_at FROM templates ORDER BY created_at DESC")
     results = [dict(row) for row in await rows.fetchall()]
     await db.close()
     return results
@@ -156,26 +161,32 @@ async def get_template(template_id: str) -> dict | None:
     return dict(result)
 
 
-async def save_template(name: str, graph_json: str) -> dict:
+async def save_template(name: str, graph_json: str, description: str = "") -> dict:
     import uuid
     template_id = uuid.uuid4().hex[:12]
     now = now_iso()
     db = await get_db()
     await db.execute(
-        "INSERT INTO templates (id, name, graph_json, created_at) VALUES (?, ?, ?, ?)",
-        (template_id, name, graph_json, now),
+        "INSERT INTO templates (id, name, description, graph_json, created_at) VALUES (?, ?, ?, ?, ?)",
+        (template_id, name, description, graph_json, now),
     )
     await db.commit()
     await db.close()
     return await get_template(template_id)
 
 
-async def update_template(template_id: str, name: str, graph_json: str) -> dict | None:
+async def update_template(template_id: str, name: str, graph_json: str, description: str | None = None) -> dict | None:
     db = await get_db()
-    cursor = await db.execute(
-        "UPDATE templates SET name = ?, graph_json = ? WHERE id = ?",
-        (name, graph_json, template_id),
-    )
+    if description is None:
+        cursor = await db.execute(
+            "UPDATE templates SET name = ?, graph_json = ? WHERE id = ?",
+            (name, graph_json, template_id),
+        )
+    else:
+        cursor = await db.execute(
+            "UPDATE templates SET name = ?, description = ?, graph_json = ? WHERE id = ?",
+            (name, description, graph_json, template_id),
+        )
     await db.commit()
     updated = cursor.rowcount > 0
     await db.close()

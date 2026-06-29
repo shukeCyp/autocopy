@@ -14,6 +14,7 @@ type TranslationKey =
   | 'sidebar.workflowCreateFailed'
   | 'sidebar.workflowCopyFailed'
   | 'sidebar.workflowDeleteFailed'
+  | 'sidebar.workflowDescriptionFailed'
   | 'sidebar.templatesLoadFailed'
   | 'sidebar.templateLoadFailed'
   | 'sidebar.loading'
@@ -28,6 +29,7 @@ type TranslationKey =
   | 'context.inspect'
   | 'context.open'
   | 'context.duplicate'
+  | 'context.editDescription'
   | 'context.resetStatus'
   | 'context.copyId'
   | 'context.delete'
@@ -64,6 +66,7 @@ const translations: Record<Language, Record<TranslationKey, string>> = {
     'sidebar.workflowCreateFailed': '创建工作流失败',
     'sidebar.workflowCopyFailed': '复制工作流失败',
     'sidebar.workflowDeleteFailed': '删除工作流失败',
+    'sidebar.workflowDescriptionFailed': '修改描述失败',
     'sidebar.templatesLoadFailed': '模板列表加载失败',
     'sidebar.templateLoadFailed': '加载模板失败',
     'sidebar.loading': '加载中...',
@@ -78,6 +81,7 @@ const translations: Record<Language, Record<TranslationKey, string>> = {
     'context.inspect': '查看属性',
     'context.open': '打开',
     'context.duplicate': '复制',
+    'context.editDescription': '修改描述',
     'context.resetStatus': '重置状态',
     'context.copyId': '复制节点ID',
     'context.delete': '删除',
@@ -113,6 +117,7 @@ const translations: Record<Language, Record<TranslationKey, string>> = {
     'sidebar.workflowCreateFailed': 'Failed to create workflow',
     'sidebar.workflowCopyFailed': 'Failed to copy workflow',
     'sidebar.workflowDeleteFailed': 'Failed to delete workflow',
+    'sidebar.workflowDescriptionFailed': 'Failed to update description',
     'sidebar.templatesLoadFailed': 'Failed to load templates',
     'sidebar.templateLoadFailed': 'Failed to load template',
     'sidebar.loading': 'Loading...',
@@ -127,6 +132,7 @@ const translations: Record<Language, Record<TranslationKey, string>> = {
     'context.inspect': 'Inspect',
     'context.open': 'Open',
     'context.duplicate': 'Duplicate',
+    'context.editDescription': 'Edit description',
     'context.resetStatus': 'Reset status',
     'context.copyId': 'Copy node ID',
     'context.delete': 'Delete',

@@ -9,7 +9,6 @@ import {
   DeleteOutlined,
   EditOutlined,
   ExportOutlined,
-  FolderOpenOutlined,
   HistoryOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -22,7 +21,7 @@ import {
   VideoCameraOutlined,
 } from '@ant-design/icons';
 import { useStore } from '../stores/useStore';
-import { apiGet, apiPost, apiDelete } from '../api/client';
+import { apiGet, apiPost, apiPut, apiDelete } from '../api/client';
 import type { Task, Template, NodeData, EdgeData } from '../types';
 import { nodeLabel, t as tr } from '../i18n';
 
@@ -53,6 +52,7 @@ export default function Sidebar() {
   const [loadingTemplateId, setLoadingTemplateId] = useState<string | null>(null);
   const [creatingWorkflow, setCreatingWorkflow] = useState(false);
   const [workflowMenu, setWorkflowMenu] = useState<{ template: Template; x: number; y: number } | null>(null);
+  const [descriptionDialog, setDescriptionDialog] = useState<{ template: Template; value: string; saving: boolean } | null>(null);
   const [sidebarError, setSidebarError] = useState<string>('');
   const {
     tasks,
@@ -143,7 +143,7 @@ export default function Sidebar() {
     const name = language === 'zh' ? '未命名工作流' : 'Untitled Workflow';
     const graph_json = JSON.stringify({ nodes: [], edges: [] });
     try {
-      const saved = await apiPost<{ id: string; name: string }>('/templates', { name, graph_json });
+      const saved = await apiPost<{ id: string; name: string }>('/templates', { name, description: '', graph_json });
       replaceGraph([], [], saved.id, false, saved.name);
       setCurrentTaskId(null);
       await refreshTemplates();
@@ -164,6 +164,7 @@ export default function Sidebar() {
         : await apiGet<Template & { graph_json: string }>(`/templates/${template.id}`);
       const saved = await apiPost<{ id: string; name: string }>('/templates', {
         name: `${template.name} Copy`,
+        description: template.description || '',
         graph_json: data.graph_json,
       });
       await refreshTemplates();
@@ -171,6 +172,35 @@ export default function Sidebar() {
     } catch (error) {
       console.error('copy workflow failed:', error);
       setSidebarError(tr(language, 'sidebar.workflowCopyFailed'));
+    }
+  };
+
+  const openWorkflowDescriptionDialog = (template: Template) => {
+    setWorkflowMenu(null);
+    if (template.builtin) return;
+    setDescriptionDialog({ template, value: template.description || '', saving: false });
+  };
+
+  const saveWorkflowDescription = async () => {
+    if (!descriptionDialog || descriptionDialog.saving) return;
+    const { template, value } = descriptionDialog;
+    setDescriptionDialog({ ...descriptionDialog, saving: true });
+    setSidebarError('');
+    try {
+      const data = template.graph_json
+        ? (template as Template & { graph_json: string })
+        : await apiGet<Template & { graph_json: string }>(`/templates/${template.id}`);
+      await apiPut<{ id: string; name: string; description: string }>(`/templates/${template.id}`, {
+        name: template.name,
+        description: value.trim(),
+        graph_json: data.graph_json,
+      });
+      await refreshTemplates();
+      setDescriptionDialog(null);
+    } catch (error) {
+      console.error('edit workflow description failed:', error);
+      setSidebarError(tr(language, 'sidebar.workflowDescriptionFailed'));
+      setDescriptionDialog({ ...descriptionDialog, saving: false });
     }
   };
 
@@ -276,7 +306,8 @@ export default function Sidebar() {
           <span className="min-w-0 flex-1">
             <span className="block truncate text-xs font-semibold">{loadingTemplateId === template.id ? tr(language, 'sidebar.loading') : template.name}</span>
             <span className="block truncate text-[10px] opacity-65">
-              {template.builtin ? `${tr(language, 'sidebar.builtin')} · ` : ''}{template.id === 'tts_only' ? tr(language, 'sidebar.ttsOnly') : tr(language, 'sidebar.fullFlow')}
+              {template.builtin ? `${tr(language, 'sidebar.builtin')} · ` : ''}
+              {template.description || (template.id === 'tts_only' ? tr(language, 'sidebar.ttsOnly') : tr(language, 'sidebar.fullFlow'))}
             </span>
           </span>
         </button>
@@ -287,13 +318,13 @@ export default function Sidebar() {
           style={{ left: workflowMenu.x, top: workflowMenu.y }}
           onClick={(event) => event.stopPropagation()}
         >
-          <button onClick={() => loadTemplate(workflowMenu.template)}>
-            <FolderOpenOutlined />
-            <span>{tr(language, 'context.open')}</span>
-          </button>
           <button onClick={() => copyWorkflow(workflowMenu.template)}>
             <CopyOutlined />
             <span>{tr(language, 'context.duplicate')}</span>
+          </button>
+          <button disabled={workflowMenu.template.builtin} onClick={() => openWorkflowDescriptionDialog(workflowMenu.template)}>
+            <EditOutlined />
+            <span>{tr(language, 'context.editDescription')}</span>
           </button>
           <button
             className="danger"
@@ -303,6 +334,48 @@ export default function Sidebar() {
             <DeleteOutlined />
             <span>{tr(language, 'context.delete')}</span>
           </button>
+        </div>
+      )}
+      {descriptionDialog && (
+        <div className="app-dialog-backdrop" onClick={() => !descriptionDialog.saving && setDescriptionDialog(null)}>
+          <div className="app-dialog" onClick={(event) => event.stopPropagation()}>
+            <div className="app-dialog-title">
+              <span>{language === 'zh' ? '修改工作流描述' : 'Edit workflow description'}</span>
+              <button
+                type="button"
+                disabled={descriptionDialog.saving}
+                onClick={() => setDescriptionDialog(null)}
+                aria-label={language === 'zh' ? '关闭' : 'Close'}
+              >
+                <CloseOutlined />
+              </button>
+            </div>
+            <div className="app-dialog-body">
+              <div className="app-dialog-subtitle">{descriptionDialog.template.name}</div>
+              <textarea
+                autoFocus
+                value={descriptionDialog.value}
+                onChange={(event) => setDescriptionDialog({ ...descriptionDialog, value: event.target.value })}
+                onKeyDown={(event) => {
+                  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+                    saveWorkflowDescription();
+                  }
+                  if (event.key === 'Escape' && !descriptionDialog.saving) {
+                    setDescriptionDialog(null);
+                  }
+                }}
+                placeholder={language === 'zh' ? '输入工作流描述...' : 'Enter workflow description...'}
+              />
+            </div>
+            <div className="app-dialog-actions">
+              <button type="button" disabled={descriptionDialog.saving} onClick={() => setDescriptionDialog(null)}>
+                {language === 'zh' ? '取消' : 'Cancel'}
+              </button>
+              <button type="button" className="primary" disabled={descriptionDialog.saving} onClick={saveWorkflowDescription}>
+                {descriptionDialog.saving ? tr(language, 'sidebar.loading') : language === 'zh' ? '确定' : 'Save'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

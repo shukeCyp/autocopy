@@ -9,6 +9,7 @@ from fastapi import APIRouter, File, UploadFile, HTTPException
 router = APIRouter(prefix="/api/files", tags=["files"])
 
 UPLOAD_DIR = Path(".data/uploads")
+MODEL_DIR = Path("model")
 
 
 def _safe_name(filename: str) -> str:
@@ -34,3 +35,14 @@ async def upload_file(file: UploadFile = File(...)):
         "size": target.stat().st_size,
     }
 
+
+@router.get("/models")
+async def list_models():
+    if not MODEL_DIR.exists():
+        return []
+
+    files = []
+    for path in sorted(MODEL_DIR.rglob("*")):
+        if path.is_file() and not path.name.startswith("."):
+            files.append(str(path.relative_to(MODEL_DIR)))
+    return files

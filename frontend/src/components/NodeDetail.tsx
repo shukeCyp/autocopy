@@ -39,7 +39,7 @@ export default function NodeDetail() {
         <div className="text-[10px] text-[#8f9095]">{node.type}</div>
         <div className={`text-[10px] mt-1 ${
           node.status === 'done' ? 'text-[#6cc08d]' :
-          node.status === 'running' ? 'text-[#d79a2b]' :
+          node.status === 'running' ? 'text-[var(--accent)]' :
           node.status === 'failed' ? 'text-[#ff7777]' : 'text-[#8f9095]'
         }`}>
           {node.status}
@@ -54,7 +54,7 @@ export default function NodeDetail() {
             key={t}
             onClick={() => setTab(t)}
             className={`flex-1 py-1.5 text-[10px] ${
-              tab === t ? 'text-[#d79a2b] border-b border-[#d79a2b] bg-[#202124]' : 'text-[#8f9095]'
+              tab === t ? 'text-[var(--accent)] border-b border-[var(--accent)] bg-[#202124]' : 'text-[#8f9095]'
             }`}
           >
             {{ params: tr(language, 'detail.params'), inputs: tr(language, 'detail.inputs'), outputs: tr(language, 'detail.outputs'), logs: tr(language, 'detail.logs') }[t]}
@@ -73,7 +73,7 @@ export default function NodeDetail() {
               <select
                 value={spec.param_type === 'bool' ? String(Boolean(pvs[name] !== undefined ? pvs[name] : spec.default)) : pvs[name] !== undefined ? pvs[name] : spec.default ?? ''}
                 onChange={(e) => updateNodeParam(node.id, name, spec.param_type === 'bool' ? e.target.value === 'true' : e.target.value)}
-                className="w-full bg-[#151617] border border-[#3c3d42] rounded px-2 py-1.5 text-xs text-[#f2f2f2] outline-none focus:border-[#d79a2b]"
+                className="w-full bg-[#151617] border border-[#3c3d42] rounded px-2 py-1.5 text-xs text-[#f2f2f2] outline-none focus:border-[var(--accent)]"
               >
                 {options.map((option: string) => (
                   <option key={String(option)} value={String(option)}>
@@ -91,7 +91,7 @@ export default function NodeDetail() {
                     : e.target.value;
                   updateNodeParam(node.id, name, val);
                 }}
-                className="w-full bg-[#151617] border border-[#3c3d42] rounded px-2 py-1.5 text-xs text-[#f2f2f2] outline-none focus:border-[#d79a2b]"
+                className="w-full bg-[#151617] border border-[#3c3d42] rounded px-2 py-1.5 text-xs text-[#f2f2f2] outline-none focus:border-[var(--accent)]"
               />
             )}
             {spec.description && <div className="text-[10px] text-[#77787d] mt-0.5">{spec.description}</div>}

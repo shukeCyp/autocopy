@@ -34,7 +34,7 @@ export interface Task {
 }
 
 export interface Template {
-  id: string; name: string; builtin: boolean; graph_json?: string;
+  id: string; name: string; description?: string; builtin: boolean; graph_json?: string;
 }
 
 export type WsEvent = {

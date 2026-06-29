@@ -25,6 +25,7 @@ async def api_list_templates():
                 results[f.stem] = {
                     "id": f.stem,
                     "name": data.get("metadata", {}).get("name", f.stem),
+                    "description": data.get("metadata", {}).get("description", ""),
                     "builtin": True,
                     "graph_json": f.read_text(),
                 }
@@ -36,6 +37,7 @@ async def api_list_templates():
         results[t["id"]] = {
             "id": t["id"],
             "name": t["name"],
+            "description": t.get("description", ""),
             "builtin": False,
             "graph_json": None,  # full graph not in list
             "created_at": t["created_at"],
@@ -53,6 +55,7 @@ async def api_get_template(template_id: str):
         return {
             "id": template_id,
             "name": data.get("metadata", {}).get("name", template_id),
+            "description": data.get("metadata", {}).get("description", ""),
             "builtin": True,
             "graph_json": builtin_path.read_text(),
         }
@@ -61,22 +64,26 @@ async def api_get_template(template_id: str):
     t = await get_template(template_id)
     if t is None:
         raise HTTPException(status_code=404, detail="template not found")
-    return {"id": t["id"], "name": t["name"], "builtin": False, "graph_json": t["graph_json"]}
+    return {"id": t["id"], "name": t["name"], "description": t.get("description", ""), "builtin": False, "graph_json": t["graph_json"]}
 
 
 @router.post("")
 async def api_save_template(body: dict):
     name = body.get("name", "").strip()
+    description = body.get("description", "").strip()
     graph_json = body.get("graph_json", "")
     if not name or not graph_json:
         raise HTTPException(status_code=400, detail="name and graph_json are required")
-    t = await save_template(name, graph_json)
-    return {"id": t["id"], "name": t["name"]}
+    t = await save_template(name, graph_json, description)
+    return {"id": t["id"], "name": t["name"], "description": t.get("description", "")}
 
 
 @router.put("/{template_id}")
 async def api_update_template(template_id: str, body: dict):
     name = body.get("name", "").strip()
+    description = body.get("description")
+    if isinstance(description, str):
+        description = description.strip()
     graph_json = body.get("graph_json", "")
     if not name or not graph_json:
         raise HTTPException(status_code=400, detail="name and graph_json are required")
@@ -85,10 +92,10 @@ async def api_update_template(template_id: str, body: dict):
     if builtin_path.exists():
         raise HTTPException(status_code=409, detail="built-in templates cannot be overwritten")
 
-    t = await update_template(template_id, name, graph_json)
+    t = await update_template(template_id, name, graph_json, description)
     if t is None:
         raise HTTPException(status_code=404, detail="template not found")
-    return {"id": t["id"], "name": t["name"]}
+    return {"id": t["id"], "name": t["name"], "description": t.get("description", "")}
 
 
 @router.delete("/{template_id}")

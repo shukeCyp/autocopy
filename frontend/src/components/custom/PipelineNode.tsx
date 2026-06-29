@@ -1,21 +1,37 @@
-import { memo, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
+import {
+  AudioOutlined,
+  BranchesOutlined,
+  EditOutlined,
+  ExportOutlined,
+  FolderOpenOutlined,
+  ScissorOutlined,
+  SoundOutlined,
+  VideoCameraOutlined,
+} from '@ant-design/icons';
 import { Handle, Position } from 'reactflow';
 import { nodeLabel, paramLabel, portLabel, t, type Language } from '../../i18n';
 import { useStore } from '../../stores/useStore';
-import { apiUpload } from '../../api/client';
+import { apiGet, apiUpload } from '../../api/client';
 
 const STATUS_COLORS: Record<string, string> = {
   idle: 'border-[#3c3d42]',
-  queued: 'border-[#d79a2b]',
-  running: 'border-[#d79a2b] shadow-[0_0_0_1px_rgba(215,154,43,0.45)]',
+  queued: 'border-[var(--accent)]',
+  running: 'border-[var(--accent)] shadow-[0_0_0_1px_var(--accent)]',
   done: 'border-[#4c9f70]',
   failed: 'border-[#cc5555]',
   skipped: 'border-[#5b5c62]',
 };
 
-const ICONS: Record<string, string> = {
-  VideoInput: '📁', TTSExtract: '🎤', SRTRewrite: '✏️',
-  VideoMatch: '🎬', TTSGenerate: '🔊', VideoCompose: '🎞️', JianyingExport: '✂️',
+const NODE_TITLE_ICONS: Record<string, { icon: ReactNode; color: string; bg: string }> = {
+  VideoInput: { icon: <FolderOpenOutlined />, color: '#45a3ff', bg: 'rgba(69, 163, 255, 0.16)' },
+  TTSExtract: { icon: <AudioOutlined />, color: '#22c55e', bg: 'rgba(34, 197, 94, 0.16)' },
+  SRTRewrite: { icon: <EditOutlined />, color: '#a855f7', bg: 'rgba(168, 85, 247, 0.16)' },
+  VideoMatch: { icon: <BranchesOutlined />, color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.16)' },
+  TTSGenerate: { icon: <SoundOutlined />, color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.16)' },
+  VideoCompose: { icon: <ScissorOutlined />, color: '#14b8a6', bg: 'rgba(20, 184, 166, 0.16)' },
+  JianyingExport: { icon: <ExportOutlined />, color: '#6475ff', bg: 'rgba(100, 117, 255, 0.16)' },
 };
 
 const PORT_COLORS: Record<string, string> = {
@@ -68,15 +84,39 @@ function PipelineNode({ data, selected }: any) {
   const updateNodeParam = useStore((state) => state.updateNodeParam);
   const updateNodeStatus = useStore((state) => state.updateNodeStatus);
   const borderColor = STATUS_COLORS[status] || STATUS_COLORS.idle;
-  const icon = ICONS[nodeType] || '⚙️';
+  const titleIcon = NODE_TITLE_ICONS[nodeType] || { icon: <VideoCameraOutlined />, color: '#8b8c90', bg: 'rgba(139, 140, 144, 0.16)' };
   const [editingParam, setEditingParam] = useState<string | null>(null);
+  const [openSelectParam, setOpenSelectParam] = useState<string | null>(null);
   const [draftValue, setDraftValue] = useState('');
+  const [modelFiles, setModelFiles] = useState<string[]>([]);
 
   const inputPorts = Object.keys(inputs || {});
   const outputPorts = Object.keys(outputs || {});
   const paramEntries = Object.entries(params || {});
+  const hasModelFileParam = Boolean(params?.whisper_model || params?.vad_model);
   const isVideoInput = nodeType === 'VideoInput' && params?.path;
   const currentPath = paramValues?.path ?? params?.path?.default ?? '';
+
+  useEffect(() => {
+    if (!hasModelFileParam) return;
+    apiGet<string[]>('/files/models')
+      .then(setModelFiles)
+      .catch(() => setModelFiles([]));
+  }, [hasModelFileParam]);
+
+  useEffect(() => {
+    if (!editingParam && !openSelectParam) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement;
+      if (target.closest('.comfy-param-popover, .comfy-param-menu, .comfy-param-value, .comfy-param-arrow')) return;
+      setEditingParam(null);
+      setOpenSelectParam(null);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    return () => document.removeEventListener('pointerdown', handlePointerDown, true);
+  }, [editingParam, openSelectParam]);
 
   const paramValue = (name: string, spec: any) =>
     paramValues?.[name] !== undefined ? paramValues[name] : spec.default ?? '';
@@ -99,6 +139,7 @@ function PipelineNode({ data, selected }: any) {
 
   const paramOptions = (name: string, spec: any) => {
     if (spec.param_type === 'bool') return ['true', 'false'];
+    if (name === 'whisper_model' || name === 'vad_model') return modelFiles;
     if (name === 'model' && nodeType === 'TTSGenerate') return ['speech-02-hd', 'speech-02-turbo'];
     if (name === 'model' && nodeType === 'SRTRewrite') return ['gemini-3.5-flash'];
     return spec.options || PARAM_OPTIONS[name] || null;
@@ -114,6 +155,7 @@ function PipelineNode({ data, selected }: any) {
   };
 
   const openParamEditor = (name: string, spec: any) => {
+    setOpenSelectParam(null);
     setEditingParam(name);
     setDraftValue(String(paramValue(name, spec) ?? ''));
   };
@@ -121,6 +163,15 @@ function PipelineNode({ data, selected }: any) {
   const commitParamEditor = (name: string, spec: any) => {
     updateParamFromInput(name, spec, draftValue);
     setEditingParam(null);
+  };
+
+  const numericStep = (spec: any) => spec.param_type === 'float' ? 0.1 : 1;
+
+  const nudgeParam = (name: string, spec: any, direction: -1 | 1) => {
+    if (spec.param_type !== 'int' && spec.param_type !== 'float') return;
+    const current = Number(paramValue(name, spec) || 0);
+    const next = current + numericStep(spec) * direction;
+    updateNodeParam(id, name, spec.param_type === 'int' ? Math.round(next) : Number(next.toFixed(3)));
   };
 
   const extractDroppedPath = (event: React.DragEvent<HTMLDivElement>) => {
@@ -183,12 +234,12 @@ function PipelineNode({ data, selected }: any) {
     >
       <div className="comfy-node-title flex h-12 items-center gap-2 px-3">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-lg">{icon}</span>
+          <span className="comfy-node-title-icon" style={{ color: titleIcon.color, background: titleIcon.bg }}>{titleIcon.icon}</span>
           <span className="comfy-node-name truncate text-[15px] font-semibold">{nodeLabel(language, nodeType, label, id)}</span>
         </div>
         <span className={`ml-auto h-3 w-3 rounded-full ${
           status === 'done' ? 'bg-[#4c9f70]' :
-          status === 'running' ? 'bg-[#d79a2b] animate-pulse' :
+          status === 'running' ? 'bg-[var(--accent)] animate-pulse' :
           status === 'failed' ? 'bg-[#cc5555]' : 'bg-[#696a70]'
         }`} />
       </div>
@@ -225,8 +276,8 @@ function PipelineNode({ data, selected }: any) {
                     id={name}
                     className="comfy-port-handle"
                     style={{
-                      background: portColor(inputs?.[name]?.port_type, name),
-                    }}
+                      '--handle-color': portColor(inputs?.[name]?.port_type, name),
+                    } as CSSProperties}
                   />
                 )}
                 <span className="truncate" style={{ color: portColor(inputs?.[name]?.port_type, name) }}>{portLabel(language, name)}</span>
@@ -246,8 +297,8 @@ function PipelineNode({ data, selected }: any) {
                     id={name}
                     className="comfy-port-handle"
                     style={{
-                      background: portColor(outputs?.[name]?.port_type, name),
-                    }}
+                      '--handle-color': portColor(outputs?.[name]?.port_type, name),
+                    } as CSSProperties}
                   />
                 )}
               </div>
@@ -261,46 +312,109 @@ function PipelineNode({ data, selected }: any) {
               return (
                 <div key={name} className="comfy-param-wrap">
                   <div className="comfy-param nodrag nowheel grid grid-cols-[minmax(0,1fr)_minmax(84px,auto)] items-center gap-2 text-[13px] text-[#d9d9d9]">
+                    <button
+                      type="button"
+                      className="comfy-param-arrow left"
+                      disabled={spec.param_type !== 'int' && spec.param_type !== 'float'}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        nudgeParam(name, spec, -1);
+                      }}
+                      aria-label={language === 'zh' ? '减少' : 'Decrease'}
+                    />
                     <span className="comfy-param-label min-w-0 truncate">{paramLabel(language, name)}</span>
                     {options ? (
-                      <select
-                        value={spec.param_type === 'bool' ? String(Boolean(paramValue(name, spec))) : paramValue(name, spec)}
-                        onChange={(event) => updateParamFromInput(name, spec, event.target.value)}
-                        className="comfy-param-select min-w-0 text-right outline-none"
+                      <button
+                        type="button"
+                        className="comfy-param-value comfy-param-select-trigger min-w-0 text-right"
+                        onClick={() => {
+                          setEditingParam(null);
+                          setOpenSelectParam(openSelectParam === name ? null : name);
+                        }}
                       >
-                        {options.map((option: string) => (
-                          <option key={String(option)} value={String(option)}>
-                            {spec.param_type === 'bool' && language === 'zh'
-                              ? option === 'true' ? '开启' : '关闭'
-                              : String(option)}
-                          </option>
-                        ))}
-                      </select>
+                        {displayParamValue(name, spec) || 'undefined'}
+                      </button>
                     ) : (
                       <button
                         type="button"
                         onClick={() => openParamEditor(name, spec)}
-                        className="comfy-param-value min-w-0 truncate text-right"
+                        className="comfy-param-value min-w-0 text-right"
                       >
                         {displayParamValue(name, spec) || 'undefined'}
                       </button>
                     )}
+                    <button
+                      type="button"
+                      className="comfy-param-arrow right"
+                      disabled={spec.param_type !== 'int' && spec.param_type !== 'float'}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        nudgeParam(name, spec, 1);
+                      }}
+                      aria-label={language === 'zh' ? '增加' : 'Increase'}
+                    />
                   </div>
+                  {openSelectParam === name && options && (
+                    <div className="comfy-param-menu nodrag nowheel">
+                      {options.length === 0 && (
+                        <div className="comfy-param-menu-empty">
+                          {language === 'zh' ? 'model 目录暂无模型文件' : 'No model files in model/'}
+                        </div>
+                      )}
+                      {options.map((option: string) => {
+                        const label = spec.param_type === 'bool' && language === 'zh'
+                          ? option === 'true' ? '开启' : '关闭'
+                          : String(option);
+                        const selectedOption = String(spec.param_type === 'bool' ? Boolean(paramValue(name, spec)) : paramValue(name, spec)) === String(option);
+                        return (
+                          <button
+                            type="button"
+                            key={String(option)}
+                            className={selectedOption ? 'active' : ''}
+                            onClick={() => {
+                              updateParamFromInput(name, spec, option);
+                              setOpenSelectParam(null);
+                            }}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                   {editingParam === name && !options && (
                     <div className="comfy-param-popover nodrag nowheel">
-                      <input
-                        autoFocus
-                        type={spec.param_type === 'int' || spec.param_type === 'float' ? 'number' : 'text'}
-                        value={draftValue}
-                        onChange={(event) => setDraftValue(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') commitParamEditor(name, spec);
-                          if (event.key === 'Escape') setEditingParam(null);
-                        }}
-                      />
-                      <button type="button" onClick={() => commitParamEditor(name, spec)}>
-                        {language === 'zh' ? '确定' : 'OK'}
-                      </button>
+                      <div className="comfy-param-popover-title">{paramLabel(language, name)}</div>
+                      {spec.param_type === 'int' || spec.param_type === 'float' ? (
+                        <input
+                          autoFocus
+                          type="number"
+                          value={draftValue}
+                          onChange={(event) => setDraftValue(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') commitParamEditor(name, spec);
+                            if (event.key === 'Escape') setEditingParam(null);
+                          }}
+                        />
+                      ) : (
+                        <textarea
+                          autoFocus
+                          value={draftValue}
+                          onChange={(event) => setDraftValue(event.target.value)}
+                          onKeyDown={(event) => {
+                            if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') commitParamEditor(name, spec);
+                            if (event.key === 'Escape') setEditingParam(null);
+                          }}
+                        />
+                      )}
+                      <div className="comfy-param-popover-actions">
+                        <button type="button" className="secondary" onClick={() => setEditingParam(null)}>
+                          {language === 'zh' ? '取消' : 'Cancel'}
+                        </button>
+                        <button type="button" onClick={() => commitParamEditor(name, spec)}>
+                          {language === 'zh' ? '确定' : 'OK'}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>

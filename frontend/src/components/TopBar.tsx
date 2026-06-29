@@ -53,13 +53,15 @@ export default function TopBar() {
       const graph_json = buildGraphJson();
       const existingTemplate = useStore.getState().templates.find((template) => template.id === activeTemplateId);
       const name = workflowName || existingTemplate?.name || activeTemplateId || `Workflow ${new Date().toLocaleString()}`;
+      const description = existingTemplate?.description || '';
       let saved: { id: string; name: string };
 
       if (activeTemplateId && !activeTemplateBuiltin) {
-        saved = await apiPut<{ id: string; name: string }>(`/templates/${activeTemplateId}`, { name, graph_json });
+        saved = await apiPut<{ id: string; name: string }>(`/templates/${activeTemplateId}`, { name, description, graph_json });
       } else {
         saved = await apiPost<{ id: string; name: string }>('/templates', {
           name: activeTemplateBuiltin ? `${name} Copy` : name,
+          description,
           graph_json,
         });
       }
@@ -100,7 +102,8 @@ export default function TopBar() {
     if (!activeTemplateId || activeTemplateBuiltin) return;
     try {
       const graph_json = buildGraphJson();
-      await apiPut(`/templates/${activeTemplateId}`, { name: nextName, graph_json });
+      const existingTemplate = useStore.getState().templates.find((template) => template.id === activeTemplateId);
+      await apiPut(`/templates/${activeTemplateId}`, { name: nextName, description: existingTemplate?.description || '', graph_json });
       const templates = await apiGet<any[]>('/templates');
       setTemplates(templates);
     } catch (error) {
@@ -204,7 +207,7 @@ export default function TopBar() {
         className={`h-7 px-4 text-xs rounded border font-medium transition-colors ${
           running
             ? 'bg-[#3a3b3f] border-[#505158] text-[#8c8d93] cursor-not-allowed'
-            : 'bg-[#d79a2b] hover:bg-[#e2aa43] border-[#f0bd5b] text-[#191919]'
+            : 'bg-[var(--accent)] hover:brightness-110 border-[var(--accent)] text-[var(--accent-contrast)]'
         }`}
       >
         {running ? t(language, 'top.queueRunning') : t(language, 'top.queuePrompt')}

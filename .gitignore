@@ -27,6 +27,10 @@ htmlcov/
 # Project data
 .data/
 .model/
+output/
+source_cache/
+test_pyscene/
+test_vmf/
 
 # Workspace
 workspace/
