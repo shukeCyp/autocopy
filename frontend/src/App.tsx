@@ -2,10 +2,12 @@ import { useEffect } from 'react';
 import TopBar from './components/TopBar';
 import Sidebar from './components/Sidebar';
 import Canvas from './components/Canvas';
+import NodeDetail from './components/NodeDetail';
 import { useStore } from './stores/useStore';
 
 export default function App() {
   const theme = useStore((state) => state.theme);
+  const selectedNodeId = useStore((state) => state.selectedNodeId);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -17,6 +19,7 @@ export default function App() {
       <div className="flex-1 flex overflow-hidden">
         <Sidebar />
         <Canvas />
+        {selectedNodeId && <NodeDetail />}
       </div>
     </div>
   );

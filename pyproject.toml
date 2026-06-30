@@ -12,11 +12,21 @@ dependencies = [
     "uvicorn[standard]>=0.34",
     "aiosqlite>=0.20",
     "python-multipart>=0.0.18",
+    "torchcodec>=0.14.0",
+    "pyannote-audio>=4.0.5",
+    "video-match-finder",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 asyncio_mode = "auto"
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
+
+[tool.uv.sources]
+video-match-finder = { git = "https://github.com/Sinoosoida/video-match-finder" }
 
 [dependency-groups]
 dev = [

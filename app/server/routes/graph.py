@@ -28,9 +28,34 @@ async def _run_graph(task_id: str, graph_json: str):
         await manager.broadcast(task_id, {"type": "graph_error", "error": str(e)})
         return
 
-    await update_task(task_id, status="running", current_step="开始执行")
+    await update_task(
+        task_id,
+        status="running",
+        current_step="开始执行",
+        current_node_id="",
+        current_node_label="",
+    )
 
     async def on_event(event: ExecutorEvent):
+        if event.event_type == "node_executing" and event.node_id:
+            node = graph.nodes.get(event.node_id)
+            label = node.label if node else event.node_id
+            await update_task(
+                task_id,
+                status="running",
+                current_step=f"运行节点：{label}",
+                current_node_id=event.node_id,
+                current_node_label=label,
+            )
+        elif event.event_type == "node_error" and event.node_id:
+            node = graph.nodes.get(event.node_id)
+            label = node.label if node else event.node_id
+            await update_task(
+                task_id,
+                current_step=f"节点失败：{label}",
+                current_node_id=event.node_id,
+                current_node_label=label,
+            )
         if event.event_type == "graph_complete":
             return
         await manager.broadcast(task_id, {

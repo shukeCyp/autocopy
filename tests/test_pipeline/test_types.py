@@ -86,7 +86,13 @@ class TestParamSpec:
     def test_to_dict(self):
         spec = ParamSpec(name="threshold", param_type="float", default=0.5)
         d = spec.to_dict()
-        assert d == {"name": "threshold", "param_type": "float", "default": 0.5, "description": ""}
+        assert d == {
+            "name": "threshold",
+            "param_type": "float",
+            "default": 0.5,
+            "description": "",
+            "required": False,
+        }
 
     def test_from_dict(self):
         d = {"name": "speed", "param_type": "float", "default": 1.0, "description": "Voice speed"}
@@ -142,6 +148,7 @@ class TestNodeResult:
             "outputs": {"srt": "/tmp/out.srt"},
             "error": None,
             "duration_ms": 1234,
+            "validation_issues": [],
         }
 
 

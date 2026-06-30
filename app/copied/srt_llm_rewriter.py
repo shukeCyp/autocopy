@@ -78,6 +78,55 @@ def clean_segment_text(text):
     return re.sub(r"\s+", " ", text).strip()
 
 
+def target_uses_cjk(target_language):
+    value = str(target_language or "").lower()
+    return any(token in value for token in ("chinese", "zh", "中文", "汉语"))
+
+
+def reading_units(text, target_language):
+    text = str(text or "")
+    if target_uses_cjk(target_language):
+        cjk_chars = re.findall(r"[\u3400-\u9fff]", text)
+        latin_words = re.findall(r"[A-Za-z0-9]+(?:'[A-Za-z0-9]+)?", text)
+        return len(cjk_chars) + len(latin_words)
+    return len(re.findall(r"[A-Za-z0-9]+(?:'[A-Za-z0-9]+)?|[\u3400-\u9fff]", text))
+
+
+def max_reading_units(duration_ms, target_language):
+    seconds = max(0.5, int(duration_ms) / 1000)
+    if target_uses_cjk(target_language):
+        return max(8, int(seconds * 6.5))
+    return max(3, int(seconds * 2.8))
+
+
+def fits_duration(text, duration_ms, target_language):
+    return reading_units(text, target_language) <= max_reading_units(duration_ms, target_language)
+
+
+def clip_to_duration(text, duration_ms, target_language):
+    limit = max_reading_units(duration_ms, target_language)
+    text = clean_segment_text(text)
+    if reading_units(text, target_language) <= limit:
+        return text
+
+    if target_uses_cjk(target_language):
+        parts = re.findall(r"[\u3400-\u9fff]|[A-Za-z0-9]+(?:'[A-Za-z0-9]+)?|[^\u3400-\u9fffA-Za-z0-9]+", text)
+        units = 0
+        kept = []
+        for part in parts:
+            increment = 0
+            if re.fullmatch(r"[\u3400-\u9fff]", part) or re.fullmatch(r"[A-Za-z0-9]+(?:'[A-Za-z0-9]+)?", part):
+                increment = 1
+            if increment and units + increment > limit:
+                break
+            kept.append(part)
+            units += increment
+        return clean_segment_text("".join(kept).rstrip("，。！？、,.!?;；:： "))
+
+    words = re.findall(r"[A-Za-z0-9]+(?:'[A-Za-z0-9]+)?|[\u3400-\u9fff]", text)
+    return " ".join(words[:limit]).strip()
+
+
 def group_by_vad_duration(entries, max_segment_seconds=30, max_gap_ms=700):
     segments = []
     current = []
@@ -165,6 +214,7 @@ class GeminiSrtRewriter:
             {
                 "id": s.index,
                 "duration_seconds": round(s.duration_ms / 1000, 2),
+                "max_reading_units": max_reading_units(s.duration_ms, target_language),
                 "source_word_count": len(re.findall(r"\S+", s.text)),
                 "text": s.text,
             }
@@ -177,6 +227,7 @@ class GeminiSrtRewriter:
             "- Return a JSON array only, same length and same ids.\n"
             "- Each output item must be one segment-level subtitle text, not line-by-line fragments.\n"
             "- Keep each segment close to the source length and readable within duration_seconds.\n"
+            "- Respect max_reading_units for each item; shorten aggressively when duration is short.\n"
             "- Preserve suspense, pacing, and short-video narration rhythm.\n"
             "- Localize naturally for the target audience; avoid literal translation.\n"
             "- Localize roles, institutions, idioms, and titles. For example, Chinese '监狱长' should become the natural local equivalent such as 'warden' in English, not a stiff literal phrase.\n"
@@ -185,7 +236,55 @@ class GeminiSrtRewriter:
         )
         data = self._json_batch(prompt, segments)
         by_id = {int(item["id"]): str(item["text"]).strip() for item in data}
-        return [by_id.get(s.index, s.text) for s in segments]
+        texts = [by_id.get(s.index, s.text) for s in segments]
+        return self._fit_texts_to_durations(segments, texts, target_language, style)
+
+    def _fit_texts_to_durations(self, segments, texts, target_language, style):
+        overlong = [
+            (segment, text)
+            for segment, text in zip(segments, texts)
+            if not fits_duration(text, segment.duration_ms, target_language)
+        ]
+        if not overlong:
+            return [clean_segment_text(text) for text in texts]
+
+        shortened = self._shorten_overlong_segments(overlong, target_language, style)
+        fitted = []
+        for segment, text in zip(segments, texts):
+            candidate = shortened.get(segment.index, text)
+            if not fits_duration(candidate, segment.duration_ms, target_language):
+                candidate = clip_to_duration(candidate, segment.duration_ms, target_language)
+            fitted.append(clean_segment_text(candidate))
+        return fitted
+
+    def _shorten_overlong_segments(self, overlong, target_language, style):
+        segments = [
+            SrtSegment(segment.index, segment.timing, text, segment.duration_ms)
+            for segment, text in overlong
+        ]
+        payload = [
+            {
+                "id": segment.index,
+                "duration_seconds": round(segment.duration_ms / 1000, 2),
+                "max_reading_units": max_reading_units(segment.duration_ms, target_language),
+                "current_reading_units": reading_units(segment.text, target_language),
+                "text": segment.text,
+            }
+            for segment in segments
+        ]
+        prompt = (
+            f"Shorten these rewritten SRT narration segments in {target_language}.\n"
+            f"Style: {style}.\n"
+            "Rules:\n"
+            "- Return a JSON array only, same length and same ids.\n"
+            "- Keep the same story beat and meaning, but compress the wording.\n"
+            "- The final text for each item must be readable within duration_seconds.\n"
+            "- Do not exceed max_reading_units.\n"
+            "- Do not include timestamps, markdown, comments, or explanations.\n\n"
+            f"Input JSON:\n{json.dumps(payload, ensure_ascii=False)}"
+        )
+        data = self._json_batch(prompt, segments)
+        return {int(item["id"]): str(item["text"]).strip() for item in data}
 
     def rewrite_entries(self, entries, target_language, style, batch_size=40):
         result = []

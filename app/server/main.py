@@ -14,6 +14,7 @@ from app.server.routes.tasks import router as tasks_router
 from app.server.routes.templates import router as templates_router
 from app.server.routes.settings import router as settings_router
 from app.server.routes.files import router as files_router
+from app.server.routes.nodes import router as nodes_router
 
 # Ensure nodes are registered
 _ = importlib.import_module("app.nodes")
@@ -44,6 +45,7 @@ app.include_router(tasks_router)
 app.include_router(templates_router)
 app.include_router(settings_router)
 app.include_router(files_router)
+app.include_router(nodes_router)
 
 # Serve React frontend if built
 FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"

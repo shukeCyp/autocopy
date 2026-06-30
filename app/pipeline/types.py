@@ -45,6 +45,7 @@ class ParamSpec:
     default: Any = None
     description: str = ""
     options: list[Any] | None = None
+    required: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         data = {
@@ -52,6 +53,7 @@ class ParamSpec:
             "param_type": self.param_type,
             "default": self.default,
             "description": self.description,
+            "required": self.required,
         }
         if self.options is not None:
             data["options"] = self.options
@@ -65,6 +67,7 @@ class ParamSpec:
             default=d.get("default"),
             description=d.get("description", ""),
             options=d.get("options"),
+            required=d.get("required", False),
         )
 
 
@@ -77,6 +80,24 @@ class NodeStatus(Enum):
     SKIPPED = "skipped"
 
 
+@dataclass(frozen=True)
+class ValidationIssue:
+    level: str
+    code: str
+    message: str
+    field: str | None = None
+    node_id: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "level": self.level,
+            "code": self.code,
+            "message": self.message,
+            "field": self.field,
+            "node_id": self.node_id,
+        }
+
+
 @dataclass
 class NodeResult:
     node_id: str
@@ -84,6 +105,7 @@ class NodeResult:
     outputs: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
     duration_ms: float = 0.0
+    validation_issues: list[ValidationIssue] = field(default_factory=list)
 
     @property
     def success(self) -> bool:
@@ -96,6 +118,7 @@ class NodeResult:
             "outputs": self.outputs,
             "error": self.error,
             "duration_ms": self.duration_ms,
+            "validation_issues": [issue.to_dict() for issue in self.validation_issues],
         }
 
 
@@ -122,11 +145,23 @@ class ExecutorEvent:
         )
 
     @classmethod
-    def node_error(cls, node_id: str, error: str) -> ExecutorEvent:
+    def node_executing(cls, node_id: str) -> ExecutorEvent:
+        return cls(event_type="node_executing", node_id=node_id, data={})
+
+    @classmethod
+    def node_error(
+        cls,
+        node_id: str,
+        error: str,
+        validation_issues: list[ValidationIssue] | None = None,
+    ) -> ExecutorEvent:
+        data: dict[str, Any] = {"error": error}
+        if validation_issues is not None:
+            data["validation_issues"] = [issue.to_dict() for issue in validation_issues]
         return cls(
             event_type="node_error",
             node_id=node_id,
-            data={"error": error},
+            data=data,
         )
 
     @classmethod

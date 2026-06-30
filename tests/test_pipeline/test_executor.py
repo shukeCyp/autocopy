@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -60,9 +61,49 @@ class FatalNode(Node):
         raise RuntimeError("FatalNode always fails")
 
 
+class CommandFailureNode(Node):
+    node_type = "CommandFailure"
+
+    def _define(self):
+        self.inputs = {}
+        self.outputs = {}
+        self.params = {}
+
+    async def run(self, inputs, params, work_dir):
+        raise subprocess.CalledProcessError(
+            1,
+            ["ffprobe", "."],
+            stderr=b".: Is a directory\n",
+        )
+
+
 Node.register(EchoNode)
 Node.register(SourceNode)
 Node.register(FatalNode)
+Node.register(CommandFailureNode)
+
+
+class RequiredParamNode(Node):
+    node_type = "RequiredParamExecutor"
+    run_count = 0
+
+    def _define(self):
+        self.inputs = {}
+        self.outputs = {"out": PortSpec(name="out", port_type=PortType.JSON_DATA)}
+        self.params = {
+            "name": ParamSpec(name="name", param_type="string", default="", required=True),
+        }
+
+    async def run(self, inputs, params, work_dir):
+        RequiredParamNode.run_count += 1
+        return NodeResult(
+            node_id=self.id,
+            status=NodeStatus.DONE,
+            outputs={"out": params["name"]},
+        )
+
+
+Node.register(RequiredParamNode)
 
 
 def build_linear_graph():
@@ -104,6 +145,41 @@ class TestExecutor:
         done_events = [e for e in events if e.event_type == "node_done"]
         assert len(done_events) == 3
         assert any(e.event_type == "graph_complete" for e in events)
+
+    @pytest.mark.asyncio
+    async def test_emits_node_executing_before_node_finishes(self, tmp_path):
+        g = build_linear_graph()
+        events = []
+
+        async def collect(event):
+            events.append(event)
+
+        executor = Executor(cache_dir=tmp_path / "cache", progress_callback=collect)
+        await executor.run(g)
+
+        executing_events = [event for event in events if event.event_type == "node_executing"]
+        assert [event.node_id for event in executing_events] == g.topological_order()
+
+    @pytest.mark.asyncio
+    async def test_validation_error_fails_node_before_run(self, tmp_path):
+        RequiredParamNode.run_count = 0
+        g = Graph()
+        node = RequiredParamNode(id="required")
+        g.add_node(node)
+        events = []
+
+        async def collect(event):
+            events.append(event)
+
+        executor = Executor(cache_dir=tmp_path / "cache", progress_callback=collect)
+        result = await executor.run(g)
+
+        assert result.success is False
+        assert RequiredParamNode.run_count == 0
+        failed = result.node_results[0]
+        assert failed.status == NodeStatus.FAILED
+        assert failed.validation_issues[0].code == "missing_param"
+        assert any(event.event_type == "node_error" and event.node_id == "required" for event in events)
 
     @pytest.mark.asyncio
     async def test_executor_result_structure(self, tmp_path):
@@ -172,6 +248,49 @@ class TestExecutor:
         assert any(nr.status == NodeStatus.SKIPPED for nr in result.node_results)
         error_events = [e for e in events if e.event_type == "node_error"]
         assert len(error_events) >= 1
+
+    @pytest.mark.asyncio
+    async def test_node_failure_emits_traceback_log(self, tmp_path):
+        g = Graph()
+        src = SourceNode()
+        fatal = FatalNode()
+        g.add_node(src)
+        g.add_node(fatal)
+        g.add_edge(Edge(src.id, "data", fatal.id, "in"))
+
+        events = []
+
+        async def collect(event):
+            events.append(event)
+
+        executor = Executor(cache_dir=tmp_path / "cache", progress_callback=collect)
+        result = await executor.run(g)
+
+        assert result.success is False
+        log_events = [e for e in events if e.event_type == "log" and e.node_id == fatal.id]
+        assert log_events
+        assert log_events[0].data["level"] == "error"
+        assert "Traceback" in log_events[0].data["message"]
+        assert "FatalNode always fails" in log_events[0].data["message"]
+
+    @pytest.mark.asyncio
+    async def test_subprocess_failure_log_includes_stderr(self, tmp_path):
+        g = Graph()
+        node = CommandFailureNode()
+        g.add_node(node)
+
+        events = []
+
+        async def collect(event):
+            events.append(event)
+
+        executor = Executor(cache_dir=tmp_path / "cache", progress_callback=collect)
+        result = await executor.run(g)
+
+        assert result.success is False
+        log_events = [e for e in events if e.event_type == "log" and e.node_id == node.id]
+        assert log_events
+        assert ".: Is a directory" in log_events[0].data["message"]
 
     @pytest.mark.asyncio
     async def test_caching_skips_unchanged_nodes(self, tmp_path):

@@ -11,6 +11,7 @@ import { apiGet } from '../api/client';
 import PipelineNode from './custom/PipelineNode';
 import type { Template, NodeData, EdgeData } from '../types';
 import { nodeLabel, t } from '../i18n';
+import { loadNodeSpecMap } from '../nodeSpecs';
 
 const nodeTypes = { pipeline: PipelineNode };
 
@@ -35,12 +36,23 @@ const PORT_NAME_COLORS: Record<string, string> = {
   script_txt: '#ffcc33',
   full_srt: '#ff8c33',
   final_srt: '#ff7ac8',
+  srt_content: '#ff7ac8',
   srt_path: '#ff7ac8',
   rewritten_srt: '#ffd43b',
   matched_video: '#35b7ff',
   segments_json: '#56e36f',
   review_html: '#b66dff',
+  vmf_results_json: '#b66dff',
   timeline_audio: '#ff6b6b',
+  vocals_audio: '#ff6b6b',
+  accompaniment_audio: '#35b7ff',
+  separated_dir: '#ffcc33',
+  audio_path: '#ffcc33',
+  speech_segments_json: '#b66dff',
+  speech_segments_dir: '#ffcc33',
+  dominant_segments_json: '#f97316',
+  speaker_report_json: '#78d26f',
+  dominant_speaker_id: '#56e36f',
   entries_json: '#78d26f',
   tts_entries_json: '#78d26f',
   final_video: '#35b7ff',
@@ -64,6 +76,7 @@ export default function Canvas() {
     edges: graphEdges,
     graphVersion,
     selectedNodeId,
+    executingNodeId,
     setGraph,
     replaceGraph,
     setSelectedNodeId,
@@ -73,11 +86,17 @@ export default function Canvas() {
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null);
   const [templateNodeSamples, setTemplateNodeSamples] = useState<Map<string, NodeData>>(new Map());
 
-  // Auto-load first template if canvas is empty
+  // Load backend node schemas first, with built-in frontend specs as fallback.
   useEffect(() => {
-    if (graphNodes.length === 0) {
-      apiGet<Template[]>('/templates').then((templates) => {
-        const samples = new Map<string, NodeData>();
+    let cancelled = false;
+
+    async function loadCanvasSources() {
+      const [templates, samples] = await Promise.all([
+        apiGet<Template[]>('/templates').catch(() => []),
+        loadNodeSpecMap(),
+      ]);
+      if (cancelled) return;
+
         for (const template of templates) {
           if (!template.graph_json) continue;
           try {
@@ -88,26 +107,33 @@ export default function Canvas() {
           } catch {}
         }
         setTemplateNodeSamples(samples);
-        if (templates.length > 0) {
+
+        const state = useStore.getState();
+        if (state.nodes.length === 0 && !state.workflowName && !state.activeTemplateId && templates.length > 0) {
           const t = templates[0];
           apiGet<Template & { graph_json: string }>(`/templates/${t.id}`).then((data) => {
+            if (cancelled) return;
             const g = JSON.parse(data.graph_json || '{}');
-            const state = useStore.getState();
-            if (state.nodes.length === 0 && !state.workflowName && !state.activeTemplateId) {
+            const latest = useStore.getState();
+            if (latest.nodes.length === 0 && !latest.workflowName && !latest.activeTemplateId) {
               const newNodes: NodeData[] = (g.nodes || []).map((n: any) => ({
-                ...n, status: 'idle' as const, paramValues: {},
+                ...n, status: 'idle' as const, paramValues: {}, validationIssues: [],
               }));
               const newEdges: EdgeData[] = (g.edges || []).map((e: any) => ({
                 source_node_id: e.source_node_id, source_port: e.source_port,
                 target_node_id: e.target_node_id, target_port: e.target_port,
               }));
-              replaceGraph(newNodes, newEdges, t.id, t.builtin, t.name);
+              replaceGraph(newNodes, newEdges, t.id, t.name);
             }
           }).catch(() => {});
         }
-      }).catch(() => {});
     }
-  }, []);
+
+    loadCanvasSources();
+    return () => {
+      cancelled = true;
+    };
+  }, [replaceGraph]);
 
   const nodeSearchResults = useMemo(() => {
     const query = nodeSearchQuery.trim().toLowerCase();
@@ -146,6 +172,8 @@ export default function Canvas() {
       paramValues: n.paramValues || {},
       outputs_cache: n.outputs_cache,
       error: n.error,
+      validationIssues: n.validationIssues || [],
+      executing: running && executingNodeId === n.id,
     },
   }));
 
@@ -171,22 +199,18 @@ export default function Canvas() {
 
   const [nodesState, setNodesState] = useNodesState(rfNodes);
   const [edgesState, setEdgesState] = useEdgesState(rfEdges);
+  const activeNode = graphNodes.find((node) => node.id === executingNodeId);
+  const runningNode = running
+    ? activeNode || graphNodes.find((node) => node.status === 'running')
+    : null;
 
   useEffect(() => {
     setNodesState(rfNodes);
-  }, [graphNodes, selectedNodeId, language]);
+  }, [graphNodes, selectedNodeId, executingNodeId, language]);
 
   useEffect(() => {
     setEdgesState(rfEdges);
   }, [graphEdges, running]);
-
-  useEffect(() => {
-    if (!flowInstance || graphNodes.length === 0) return;
-    const frame = requestAnimationFrame(() => {
-      flowInstance.fitView({ padding: 0.18, duration: 180 });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [flowInstance, graphVersion, graphNodes.length]);
 
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -396,8 +420,12 @@ export default function Canvas() {
 
   return (
     <div className="canvas-shell flex-1 relative" onClick={closeContextMenu}>
-      <div className="canvas-status-pill">
-        {t(language, 'canvas.ready')} · {graphNodes.length} {t(language, 'top.nodes')} · {graphEdges.length} {t(language, 'top.links')}
+      <div className={`canvas-status-pill ${runningNode || activeNode ? 'running' : ''}`}>
+        {runningNode
+          ? `${t(language, 'status.running')}: ${nodeLabel(language, runningNode.type, runningNode.label, runningNode.id)}`
+          : activeNode
+            ? `${activeNode.status === 'failed' ? (language === 'zh' ? '失败节点' : 'Failed') : (language === 'zh' ? '最后节点' : 'Last')}: ${nodeLabel(language, activeNode.type, activeNode.label, activeNode.id)}`
+          : `${t(language, 'canvas.ready')} · ${graphNodes.length} ${t(language, 'top.nodes')} · ${graphEdges.length} ${t(language, 'top.links')}`}
       </div>
       {graphNodes.length === 0 && (
         <div className="canvas-empty-hint">
@@ -434,8 +462,13 @@ export default function Canvas() {
         }}
         onInit={setFlowInstance}
         nodeTypes={nodeTypes}
-        fitView
+        panOnDrag
+        panOnScroll
+        zoomOnScroll
+        zoomOnPinch
         zoomOnDoubleClick={false}
+        minZoom={0.08}
+        maxZoom={1.6}
         deleteKeyCode={['Backspace', 'Delete']}
         className="comfy-canvas"
         proOptions={{ hideAttribution: true }}
@@ -524,6 +557,7 @@ export default function Canvas() {
                   outputs: nodeSearchPreview.outputs,
                   params: nodeSearchPreview.params,
                   paramValues: {},
+                  validationIssues: [],
                   preview: true,
                 }}
               />

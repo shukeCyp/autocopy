@@ -18,9 +18,7 @@ type TranslationKey =
   | 'sidebar.templatesLoadFailed'
   | 'sidebar.templateLoadFailed'
   | 'sidebar.loading'
-  | 'sidebar.builtin'
   | 'sidebar.fullFlow'
-  | 'sidebar.ttsOnly'
   | 'sidebar.tasks'
   | 'sidebar.emptyTasks'
   | 'canvas.ready'
@@ -70,9 +68,7 @@ const translations: Record<Language, Record<TranslationKey, string>> = {
     'sidebar.templatesLoadFailed': '模板列表加载失败',
     'sidebar.templateLoadFailed': '加载模板失败',
     'sidebar.loading': '加载中...',
-    'sidebar.builtin': '内置',
-    'sidebar.fullFlow': '6步全流程',
-    'sidebar.ttsOnly': '仅TTS',
+    'sidebar.fullFlow': '固定全流程',
     'sidebar.tasks': '任务历史',
     'sidebar.emptyTasks': '暂无历史任务',
     'canvas.ready': '队列已就绪',
@@ -121,9 +117,7 @@ const translations: Record<Language, Record<TranslationKey, string>> = {
     'sidebar.templatesLoadFailed': 'Failed to load templates',
     'sidebar.templateLoadFailed': 'Failed to load template',
     'sidebar.loading': 'Loading...',
-    'sidebar.builtin': 'Built-in',
-    'sidebar.fullFlow': '6-step flow',
-    'sidebar.ttsOnly': 'TTS only',
+    'sidebar.fullFlow': 'Fixed full flow',
     'sidebar.tasks': 'Task History',
     'sidebar.emptyTasks': 'No task history',
     'canvas.ready': 'Queue ready',
@@ -162,11 +156,18 @@ export function t(language: Language, key: TranslationKey): string {
 
 const nodeLabelZh: Record<string, string> = {
   VideoInput: '加载视频',
+  VideoAudioExtract: '提取音频',
+  VocalSeparation: '人声分离',
+  VoiceVAD: 'VAD 切分',
+  DominantSpeaker: '主说话人',
+  SegmentASR: '片段 ASR',
   TTSExtract: '旁白提取',
-  SRTRewrite: '文案改写',
+  SRTRewrite: 'SRT模型改写',
   VideoMatch: '镜头匹配',
+  VideoMatchVMF: 'VMF画面匹配',
   TTSGenerate: '音频生成',
   VideoCompose: '视频合成',
+  JianyingMerge: '剪映合并',
   JianyingExport: '剪映导出',
 };
 
@@ -177,12 +178,23 @@ const portLabelZh: Record<string, string> = {
   script_txt: '脚本文本',
   full_srt: '完整字幕',
   final_srt: '旁白字幕',
+  srt_content: '字幕文本',
   srt_path: '字幕路径',
   rewritten_srt: '改写字幕',
   matched_video: '匹配视频',
   segments_json: '片段数据',
   review_html: '复核页面',
+  vmf_results_json: 'VMF结果',
   timeline_audio: '时间线音频',
+  vocals_audio: '人声音频',
+  accompaniment_audio: '伴奏音频',
+  separated_dir: '分离目录',
+  audio_path: '音频路径',
+  speech_segments_json: '语音片段',
+  speech_segments_dir: '片段目录',
+  dominant_segments_json: '主说话人片段',
+  speaker_report_json: '声纹报告',
+  dominant_speaker_id: '主说话人 ID',
   entries_json: '音频条目',
   tts_entries_json: '配音条目',
   final_video: '成片视频',
@@ -215,16 +227,32 @@ const paramLabelZh: Record<string, string> = {
   audio_format: '音频格式',
   video_codec: '视频编码',
   audio_codec: '音频编码',
+  draft_name: '草稿名称',
+  draft_folder: '草稿目录',
+  asr_language: '识别语言',
+  prompt: '提示词',
+  similarity_threshold: '相似度阈值',
+  speaker_filter: '声纹过滤',
+  speaker_threshold: '声纹阈值',
+  timing_offset_ms: '时间校正毫秒',
+  pyannote_model: 'Pyannote 模型',
+  hf_token: 'HF Token',
 };
 
 const templateLabelZh: Record<string, string> = {
   viral_input: '加载视频',
   source_input: '加载视频',
+  vocal_separation: '人声分离',
+  input_video: '加载视频',
+  voice_vad: 'VAD 切分',
+  dominant_speaker: '主说话人',
+  segment_asr: 'ASR 输出',
   tts_extract: 'TTS 提取',
-  srt_rewrite: '文案改写',
+  srt_rewrite: 'SRT模型改写',
   video_match: '镜头匹配',
   tts_generate: '音频生成',
   video_compose: '视频拼接',
+  jianying_merge: '剪映合并',
   jianying_export: '剪映导出',
 };
 

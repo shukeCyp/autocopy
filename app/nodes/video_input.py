@@ -7,6 +7,7 @@ from pathlib import Path
 
 from app.pipeline.node import Node
 from app.pipeline.types import NodeResult, NodeStatus, PortSpec, PortType, ParamSpec
+from app.pipeline.validation import PathExistsRule
 
 
 class VideoInput(Node):
@@ -20,11 +21,24 @@ class VideoInput(Node):
             "video_info": PortSpec(name="video_info", port_type=PortType.VIDEO_INFO),
         }
         self.params = {
-            "path": ParamSpec(name="path", param_type="string", default="", description="Video file path"),
+            "path": ParamSpec(
+                name="path",
+                param_type="string",
+                default="",
+                description="Video file path",
+                required=True,
+            ),
         }
 
+    def custom_validation_rules(self):
+        return [PathExistsRule(field="path", source="param", code="missing_file", label="video")]
+
     async def run(self, inputs, params, work_dir):
-        path = Path(params["path"])
+        raw_path = str(params.get("path", "")).strip()
+        if not raw_path:
+            raise ValueError("video path is required")
+
+        path = Path(raw_path)
         if not path.exists():
             raise FileNotFoundError(f"video not found: {path}")
 
@@ -34,7 +48,7 @@ class VideoInput(Node):
                 "-show_entries", "stream=width,height,duration,avg_frame_rate",
                 "-of", "json", str(path),
             ],
-            check=True, stdout=subprocess.PIPE,
+            check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         )
         stream = json.loads(result.stdout)["streams"][0]
         fps_str = stream.get("avg_frame_rate", "0/1")

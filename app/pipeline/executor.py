@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import time
+import traceback
 from pathlib import Path
 from typing import Any, Callable, Awaitable
 
@@ -72,6 +74,34 @@ class Executor:
                 for name, spec in node.params.items()
             }
 
+            await self._emit(ExecutorEvent.node_executing(node_id))
+            validation_issues = node.validate(inputs, params)
+            validation_errors = [issue for issue in validation_issues if issue.level == "error"]
+            if validation_errors:
+                error = "; ".join(issue.message for issue in validation_errors)
+                node.status = NodeStatus.FAILED
+                node_results.append(NodeResult(
+                    node_id=node_id,
+                    status=NodeStatus.FAILED,
+                    outputs={},
+                    error=error,
+                    validation_issues=validation_issues,
+                ))
+                await self._emit(ExecutorEvent.node_error(node_id, error, validation_issues))
+                await self._emit(ExecutorEvent.log(node_id, "error", error))
+
+                if self.error_strategy == "stop":
+                    remaining = order[order.index(node_id) + 1:]
+                    for rid in remaining:
+                        node_results.append(NodeResult(
+                            node_id=rid,
+                            status=NodeStatus.SKIPPED,
+                            outputs={},
+                            error="skipped due to upstream failure",
+                        ))
+                    break
+                continue
+
             # Check cache
             cache_key = node.cache_key(inputs, params)
             if not self.force_rerun and self._cache_hit(node, cache_key):
@@ -97,14 +127,16 @@ class Executor:
                 node_results.append(result)
                 await self._emit(ExecutorEvent.node_done(node_id, result.outputs))
             except Exception as exc:
+                error = str(exc)
+                detail = self._format_exception(exc)
                 node_results.append(NodeResult(
                     node_id=node_id,
                     status=NodeStatus.FAILED,
                     outputs={},
-                    error=str(exc),
+                    error=error,
                 ))
-                await self._emit(ExecutorEvent.node_error(node_id, str(exc)))
-                await self._emit(ExecutorEvent.log(node_id, "error", str(exc)))
+                await self._emit(ExecutorEvent.node_error(node_id, error))
+                await self._emit(ExecutorEvent.log(node_id, "error", detail))
 
                 if self.error_strategy == "stop":
                     # Mark remaining nodes as skipped
@@ -156,6 +188,22 @@ class Executor:
     async def _emit(self, event: ExecutorEvent) -> None:
         if self.progress_callback:
             await self.progress_callback(event)
+
+    def _format_exception(self, exc: Exception) -> str:
+        detail = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)).rstrip()
+        if isinstance(exc, subprocess.CalledProcessError):
+            parts = [detail]
+            if exc.stdout:
+                parts.append(f"\nstdout:\n{self._decode_process_output(exc.stdout)}")
+            if exc.stderr:
+                parts.append(f"\nstderr:\n{self._decode_process_output(exc.stderr)}")
+            return "\n".join(parts).rstrip()
+        return detail
+
+    def _decode_process_output(self, value: Any) -> str:
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace").rstrip()
+        return str(value).rstrip()
 
     def _cache_path(self, node: Node, cache_key: str) -> Path:
         return self.cache_dir / node.type / cache_key

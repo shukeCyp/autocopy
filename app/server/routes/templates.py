@@ -1,45 +1,43 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 from fastapi import APIRouter, HTTPException
 
-from app.server.database import list_templates, get_template, save_template, update_template, delete_template
+from app.server.database import (
+    list_templates,
+    get_template,
+    save_template,
+    update_template,
+    delete_template,
+    upsert_template,
+)
+from app.server.workflow_templates import (
+    get_workflow_template,
+    list_workflow_templates,
+    upgrade_workflow_graph_json,
+)
 
 router = APIRouter(prefix="/api/templates", tags=["templates"])
-
-# Pre-built templates from disk (absolute path, independent of cwd)
-_BUILTIN_DIR = Path(__file__).resolve().parent.parent.parent / "templates"
 
 
 @router.get("")
 async def api_list_templates():
-    results = {}
+    results = {
+        template.id: {
+            "id": template.id,
+            "name": template.name,
+            "description": template.description,
+            "graph_json": template.graph_json,
+        }
+        for template in list_workflow_templates().values()
+    }
 
-    # Load built-in templates
-    if _BUILTIN_DIR.exists():
-        for f in sorted(_BUILTIN_DIR.glob("*.json")):
-            try:
-                data = json.loads(f.read_text())
-                results[f.stem] = {
-                    "id": f.stem,
-                    "name": data.get("metadata", {}).get("name", f.stem),
-                    "description": data.get("metadata", {}).get("description", ""),
-                    "builtin": True,
-                    "graph_json": f.read_text(),
-                }
-            except Exception:
-                continue
-
-    # Load user templates from DB
+    # Saved templates override file templates with the same id.
     for t in await list_templates():
         results[t["id"]] = {
             "id": t["id"],
             "name": t["name"],
             "description": t.get("description", ""),
-            "builtin": False,
-            "graph_json": None,  # full graph not in list
+            "graph_json": upgrade_workflow_graph_json(t["graph_json"]),
             "created_at": t["created_at"],
         }
 
@@ -48,23 +46,26 @@ async def api_list_templates():
 
 @router.get("/{template_id}")
 async def api_get_template(template_id: str):
-    # Check built-in first
-    builtin_path = _BUILTIN_DIR / f"{template_id}.json"
-    if builtin_path.exists():
-        data = json.loads(builtin_path.read_text())
+    # Saved templates override file templates with the same id.
+    t = await get_template(template_id)
+    if t is not None:
         return {
-            "id": template_id,
-            "name": data.get("metadata", {}).get("name", template_id),
-            "description": data.get("metadata", {}).get("description", ""),
-            "builtin": True,
-            "graph_json": builtin_path.read_text(),
+            "id": t["id"],
+            "name": t["name"],
+            "description": t.get("description", ""),
+            "graph_json": upgrade_workflow_graph_json(t["graph_json"]),
         }
 
-    # Check DB
-    t = await get_template(template_id)
-    if t is None:
-        raise HTTPException(status_code=404, detail="template not found")
-    return {"id": t["id"], "name": t["name"], "description": t.get("description", ""), "builtin": False, "graph_json": t["graph_json"]}
+    template = get_workflow_template(template_id)
+    if template is not None:
+        return {
+            "id": template.id,
+            "name": template.name,
+            "description": template.description,
+            "graph_json": template.graph_json,
+        }
+
+    raise HTTPException(status_code=404, detail="template not found")
 
 
 @router.post("")
@@ -74,6 +75,7 @@ async def api_save_template(body: dict):
     graph_json = body.get("graph_json", "")
     if not name or not graph_json:
         raise HTTPException(status_code=400, detail="name and graph_json are required")
+    graph_json = upgrade_workflow_graph_json(graph_json)
     t = await save_template(name, graph_json, description)
     return {"id": t["id"], "name": t["name"], "description": t.get("description", "")}
 
@@ -87,24 +89,21 @@ async def api_update_template(template_id: str, body: dict):
     graph_json = body.get("graph_json", "")
     if not name or not graph_json:
         raise HTTPException(status_code=400, detail="name and graph_json are required")
-
-    builtin_path = _BUILTIN_DIR / f"{template_id}.json"
-    if builtin_path.exists():
-        raise HTTPException(status_code=409, detail="built-in templates cannot be overwritten")
+    graph_json = upgrade_workflow_graph_json(graph_json)
 
     t = await update_template(template_id, name, graph_json, description)
     if t is None:
-        raise HTTPException(status_code=404, detail="template not found")
+        if get_workflow_template(template_id) is None:
+            raise HTTPException(status_code=404, detail="template not found")
+        t = await upsert_template(template_id, name, graph_json, description or "")
     return {"id": t["id"], "name": t["name"], "description": t.get("description", "")}
 
 
 @router.delete("/{template_id}")
 async def api_delete_template(template_id: str):
-    builtin_path = _BUILTIN_DIR / f"{template_id}.json"
-    if builtin_path.exists():
-        raise HTTPException(status_code=409, detail="built-in templates cannot be deleted")
-
     deleted = await delete_template(template_id)
+    if get_workflow_template(template_id) is not None:
+        return {"ok": True}
     if not deleted:
         raise HTTPException(status_code=404, detail="template not found")
     return {"ok": True}

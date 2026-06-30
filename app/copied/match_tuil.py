@@ -20,6 +20,8 @@ from typing import Iterable
 import numpy as np
 from scipy.spatial import cKDTree
 
+from app.frame_match import build_frame_match_payload, legacy_segment_match, video_metadata
+
 try:
     import torch
 except ImportError:  # pragma: no cover - CPU-only install
@@ -137,6 +139,10 @@ def duration(path: Path) -> float:
 def frame_count(path: Path, fallback_fps: float) -> int:
     value = ffprobe(path, "nb_frames")
     return int(value) if value and value != "N/A" else round(duration(path) * fallback_fps)
+
+
+def dimensions(path: Path) -> tuple[int, int]:
+    return int(ffprobe(path, "width")), int(ffprobe(path, "height"))
 
 
 def file_md5(path: Path) -> str:
@@ -830,6 +836,120 @@ def concat(shots_dir: Path, count: int, work_dir: Path, output_video: Path) -> N
         "".join(f"file '{(shots_dir / f'shot{i:03d}.mp4').resolve()}'\n" for i in range(1, count + 1))
     )
     run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file), "-c", "copy", str(output_video)])
+
+
+def match_frames(viral_path: str | Path, source_path: str | Path, output_dir: str | Path | None = None, use_gpu: bool = False) -> dict[str, object]:
+    viral_path = Path(viral_path).expanduser().resolve()
+    source_path = Path(source_path).expanduser().resolve()
+    base_dir = Path.cwd()
+    output_dir = Path(output_dir).expanduser().resolve() if output_dir else run_dir(viral_path, base_dir)
+    work_dir = output_dir / "work"
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    source_fps = fps(source_path)
+    viral_fps = fps(viral_path)
+    source_frames = frame_count(source_path, source_fps)
+    viral_frames = frame_count(viral_path, viral_fps)
+    viral_width, viral_height = dimensions(viral_path)
+    source_width, source_height = dimensions(source_path)
+    log(f"viral: {viral_path}")
+    log(f"source: {source_path}")
+    log(f"output: {output_dir}")
+    log(f"fps: viral={viral_fps:.3f}, source={source_fps:.3f}")
+    use_gpu = use_gpu and gpu_available()
+    cache_dir = gpu_source_cache_dir(source_path, base_dir) if use_gpu else source_cache_dir(source_path, base_dir)
+    log(f"source cache: {cache_dir}")
+    log(f"gpu enabled: {use_gpu}")
+
+    matches = find_matches(viral_path, source_path, source_fps, cache_dir, use_gpu)
+    matches_csv = work_dir / "matches.csv"
+    write_csv(matches, matches_csv)
+    raw_segments = build_segments(matches)
+    if not raw_segments:
+        raise RuntimeError("no matched segments found")
+    raw_segments_json = work_dir / "raw_segments.json"
+    raw_segments_json.write_text(
+        json.dumps([asdict(s) | {"frame_count": s.frame_count} for s in raw_segments], indent=2, ensure_ascii=False)
+    )
+    raw_keys = {
+        (segment.viral_start, segment.viral_end, segment.source_start, segment.source_end)
+        for segment in raw_segments
+    }
+    segments = fill_gaps_by_extending_previous(raw_segments)
+    match_params_json = work_dir / "match_params.json"
+    match_params_json.write_text(json.dumps({
+        "chunk_seconds": CHUNK_SECONDS,
+        "crop_step": CROP_STEP,
+        "feature_size": FEATURE_SIZE,
+        "score_percentile": SCORE_PERCENTILE,
+        "min_frames": MIN_FRAMES,
+        "min_segment_frames": MIN_SEGMENT_FRAMES,
+        "short_segment_frames": SHORT_SEGMENT_FRAMES,
+        "tiny_segment_frames": TINY_SEGMENT_FRAMES,
+        "bad_short_segment_score": BAD_SHORT_SEGMENT_SCORE,
+        "bad_segment_score": BAD_SEGMENT_SCORE,
+        "offset_tolerance": OFFSET_TOLERANCE,
+        "crop_tolerance": CROP_TOLERANCE,
+        "short_offset_tolerance": SHORT_OFFSET_TOLERANCE,
+        "candidate_top_k": CANDIDATE_TOP_K,
+        "max_candidates_per_frame": MAX_CANDIDATES_PER_FRAME,
+        "use_gpu": use_gpu,
+    }, indent=2, ensure_ascii=False))
+
+    frame_matches = [
+        legacy_segment_match(
+            segment,
+            index=index,
+            kind="matched"
+            if (segment.viral_start, segment.viral_end, segment.source_start, segment.source_end) in raw_keys
+            else "gap_fill",
+        )
+        for index, segment in enumerate(segments, start=1)
+    ]
+    payload = build_frame_match_payload(
+        node_type="VideoMatch",
+        engine="legacy",
+        viral_video=video_metadata(
+            viral_path,
+            fps=viral_fps,
+            frame_count=viral_frames,
+            width=viral_width,
+            height=viral_height,
+        ),
+        source_video=video_metadata(
+            source_path,
+            fps=source_fps,
+            frame_count=source_frames,
+            width=source_width,
+            height=source_height,
+        ),
+        matches=frame_matches,
+        params={"use_gpu": use_gpu},
+        artifacts={
+            "matches_csv": str(matches_csv),
+            "raw_segments_json": str(raw_segments_json),
+            "match_params_json": str(match_params_json),
+        },
+    )
+    segments_json = work_dir / "segments.json"
+    segments_json.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+    log(f"segments: {len(segments)}, frames: {sum(s.frame_count for s in segments)}")
+    log("done")
+
+    summary = {
+        "segment_count": len(segments),
+        "segment_frames": sum(s.frame_count for s in segments),
+        "viral_frames": viral_frames,
+        "output_dir": str(output_dir),
+        "viral": str(viral_path),
+        "source": str(source_path),
+        "source_cache": str(cache_dir),
+        "segments": str(segments_json),
+        "matches": str(matches_csv),
+        "use_gpu": use_gpu,
+    }
+    (work_dir / "verify_summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False))
+    return summary
 
 
 def match_video(viral_path: str | Path, source_path: str | Path, output_dir: str | Path | None = None, use_gpu: bool = False) -> dict[str, object]:

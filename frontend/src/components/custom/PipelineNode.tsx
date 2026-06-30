@@ -13,7 +13,7 @@ import {
 import { Handle, Position } from 'reactflow';
 import { nodeLabel, paramLabel, portLabel, t, type Language } from '../../i18n';
 import { useStore } from '../../stores/useStore';
-import { apiGet, apiUpload } from '../../api/client';
+import { apiGet, apiPost, apiUpload } from '../../api/client';
 
 const STATUS_COLORS: Record<string, string> = {
   idle: 'border-[#3c3d42]',
@@ -26,11 +26,18 @@ const STATUS_COLORS: Record<string, string> = {
 
 const NODE_TITLE_ICONS: Record<string, { icon: ReactNode; color: string; bg: string }> = {
   VideoInput: { icon: <FolderOpenOutlined />, color: '#45a3ff', bg: 'rgba(69, 163, 255, 0.16)' },
+  VideoAudioExtract: { icon: <AudioOutlined />, color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.16)' },
+  VocalSeparation: { icon: <SoundOutlined />, color: '#f97316', bg: 'rgba(249, 115, 22, 0.16)' },
+  VoiceVAD: { icon: <AudioOutlined />, color: '#a855f7', bg: 'rgba(168, 85, 247, 0.16)' },
+  DominantSpeaker: { icon: <BranchesOutlined />, color: '#eab308', bg: 'rgba(234, 179, 8, 0.16)' },
+  SegmentASR: { icon: <EditOutlined />, color: '#ec4899', bg: 'rgba(236, 72, 153, 0.16)' },
   TTSExtract: { icon: <AudioOutlined />, color: '#22c55e', bg: 'rgba(34, 197, 94, 0.16)' },
   SRTRewrite: { icon: <EditOutlined />, color: '#a855f7', bg: 'rgba(168, 85, 247, 0.16)' },
   VideoMatch: { icon: <BranchesOutlined />, color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.16)' },
+  VideoMatchVMF: { icon: <BranchesOutlined />, color: '#0ea5e9', bg: 'rgba(14, 165, 233, 0.16)' },
   TTSGenerate: { icon: <SoundOutlined />, color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.16)' },
   VideoCompose: { icon: <ScissorOutlined />, color: '#14b8a6', bg: 'rgba(20, 184, 166, 0.16)' },
+  JianyingMerge: { icon: <ExportOutlined />, color: '#7c8cff', bg: 'rgba(124, 140, 255, 0.16)' },
   JianyingExport: { icon: <ExportOutlined />, color: '#6475ff', bg: 'rgba(100, 117, 255, 0.16)' },
 };
 
@@ -55,12 +62,23 @@ const PORT_NAME_COLORS: Record<string, string> = {
   script_txt: '#ffcc33',
   full_srt: '#ff8c33',
   final_srt: '#ff7ac8',
+  srt_content: '#ff7ac8',
   srt_path: '#ff7ac8',
   rewritten_srt: '#ffd43b',
   matched_video: '#35b7ff',
   segments_json: '#56e36f',
   review_html: '#b66dff',
+  vmf_results_json: '#b66dff',
   timeline_audio: '#ff6b6b',
+  vocals_audio: '#ff6b6b',
+  accompaniment_audio: '#35b7ff',
+  separated_dir: '#ffcc33',
+  audio_path: '#ffcc33',
+  speech_segments_json: '#b66dff',
+  speech_segments_dir: '#ffcc33',
+  dominant_segments_json: '#f97316',
+  speaker_report_json: '#78d26f',
+  dominant_speaker_id: '#56e36f',
   entries_json: '#78d26f',
   tts_entries_json: '#78d26f',
   final_video: '#35b7ff',
@@ -80,7 +98,20 @@ function portColor(portType?: string, portName?: string) {
 }
 
 function PipelineNode({ data, selected }: any) {
-  const { id, label, nodeType, status, inputs, outputs, params, paramValues, error, language = 'zh', preview = false } = data as any & { language: Language; preview?: boolean };
+  const {
+    id,
+    label,
+    nodeType,
+    status,
+    inputs,
+    outputs,
+    params,
+    paramValues,
+    language = 'zh',
+    preview = false,
+    executing = false,
+    validationIssues = [],
+  } = data as any & { language: Language; preview?: boolean };
   const updateNodeParam = useStore((state) => state.updateNodeParam);
   const updateNodeStatus = useStore((state) => state.updateNodeStatus);
   const borderColor = STATUS_COLORS[status] || STATUS_COLORS.idle;
@@ -93,6 +124,7 @@ function PipelineNode({ data, selected }: any) {
   const inputPorts = Object.keys(inputs || {});
   const outputPorts = Object.keys(outputs || {});
   const paramEntries = Object.entries(params || {});
+  const issueCount = validationIssues.length;
   const hasModelFileParam = Boolean(params?.whisper_model || params?.vad_model);
   const isVideoInput = nodeType === 'VideoInput' && params?.path;
   const currentPath = paramValues?.path ?? params?.path?.default ?? '';
@@ -135,6 +167,20 @@ function PipelineNode({ data, selected }: any) {
       return;
     }
     updateNodeParam(id, name, value);
+  };
+
+  const chooseDirectoryParam = async (name: string) => {
+    try {
+      const result = await apiPost<{ path: string }>('/files/select-directory');
+      if (result.path) {
+        updateNodeParam(id, name, result.path);
+      }
+      setEditingParam(null);
+      setOpenSelectParam(null);
+    } catch (error) {
+      console.error('directory selection failed:', error);
+      updateNodeStatus(id, 'failed', language === 'zh' ? '选择目录失败' : 'Directory selection failed');
+    }
   };
 
   const paramOptions = (name: string, spec: any) => {
@@ -230,16 +276,22 @@ function PipelineNode({ data, selected }: any) {
         event.dataTransfer.dropEffect = 'copy';
       }}
       onDrop={preview ? undefined : handleDrop}
-      className={`comfy-node min-w-[300px] rounded-xl border ${borderColor} ${selected ? 'selected' : ''} ${preview ? 'preview' : ''}`}
+      className={`comfy-node status-${status} min-w-[300px] rounded-xl border ${borderColor} ${selected ? 'selected' : ''} ${executing ? 'executing' : ''} ${issueCount > 0 ? 'has-issues' : ''} ${preview ? 'preview' : ''}`}
     >
       <div className="comfy-node-title flex h-12 items-center gap-2 px-3">
         <div className="flex items-center gap-2 min-w-0">
           <span className="comfy-node-title-icon" style={{ color: titleIcon.color, background: titleIcon.bg }}>{titleIcon.icon}</span>
           <span className="comfy-node-name truncate text-[15px] font-semibold">{nodeLabel(language, nodeType, label, id)}</span>
         </div>
-        <span className={`ml-auto h-3 w-3 rounded-full ${
+        {issueCount > 0 && (
+          <span className="comfy-node-issue-badge">{issueCount}</span>
+        )}
+        {(status === 'running' || executing) && (
+          <span className="comfy-node-running-badge">{t(language, 'status.running')}</span>
+        )}
+        <span className={`${status === 'running' || executing ? '' : 'ml-auto'} h-3 w-3 rounded-full ${
           status === 'done' ? 'bg-[#4c9f70]' :
-          status === 'running' ? 'bg-[var(--accent)] animate-pulse' :
+          status === 'running' || executing ? 'bg-[var(--accent)] animate-pulse' :
           status === 'failed' ? 'bg-[#cc5555]' : 'bg-[#696a70]'
         }`} />
       </div>
@@ -323,7 +375,15 @@ function PipelineNode({ data, selected }: any) {
                       aria-label={language === 'zh' ? '减少' : 'Decrease'}
                     />
                     <span className="comfy-param-label min-w-0 truncate">{paramLabel(language, name)}</span>
-                    {options ? (
+                    {name === 'draft_folder' ? (
+                      <button
+                        type="button"
+                        onClick={() => chooseDirectoryParam(name)}
+                        className="comfy-param-value min-w-0 text-right"
+                      >
+                        {displayParamValue(name, spec) || (language === 'zh' ? '选择目录' : 'Choose folder')}
+                      </button>
+                    ) : options ? (
                       <button
                         type="button"
                         className="comfy-param-value comfy-param-select-trigger min-w-0 text-right"
@@ -421,9 +481,6 @@ function PipelineNode({ data, selected }: any) {
               );
             })}
           </div>
-        )}
-        {status !== 'idle' && (
-          <div className="comfy-node-status mt-2 rounded px-2 py-1 text-[10px]">{error || status}</div>
         )}
       </div>
     </div>

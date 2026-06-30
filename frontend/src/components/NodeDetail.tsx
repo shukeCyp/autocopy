@@ -1,18 +1,23 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from '../stores/useStore';
 import { t as tr } from '../i18n';
+import { apiPost } from '../api/client';
 
 export default function NodeDetail() {
   const [tab, setTab] = useState<'params' | 'inputs' | 'outputs' | 'logs'>('params');
   const { nodes, selectedNodeId, setSelectedNodeId, updateNodeParam, language } = useStore();
   const node = nodes.find((n) => n.id === selectedNodeId);
+  const logs = node?.logs || [];
+  const validationIssues = node?.validationIssues || [];
+
+  useEffect(() => {
+    if (node?.status === 'failed') {
+      setTab('logs');
+    }
+  }, [node?.id, node?.status]);
 
   if (!node) {
-    return (
-      <div className="w-72 bg-[#202124] border-l border-[#0f0f10] flex-shrink-0 flex items-center justify-center shadow-[inset_1px_0_0_#2f3033]">
-        <div className="text-[10px] text-[#77787d] text-center px-4 whitespace-pre-line">{tr(language, 'detail.selectNode')}</div>
-      </div>
-    );
+    return null;
   }
 
   const pvs = node.paramValues || {};
@@ -26,6 +31,13 @@ export default function NodeDetail() {
     if (name === 'model' && node.type === 'TTSGenerate') return ['speech-02-hd', 'speech-02-turbo'];
     if (name === 'model' && node.type === 'SRTRewrite') return ['gemini-3.5-flash'];
     return null;
+  };
+
+  const chooseDirectoryParam = async (name: string) => {
+    const result = await apiPost<{ path: string }>('/files/select-directory');
+    if (result.path) {
+      updateNodeParam(node.id, name, result.path);
+    }
   };
 
   return (
@@ -45,6 +57,11 @@ export default function NodeDetail() {
           {node.status}
           {node.error && <span className="text-[#ff7777] ml-1">- {node.error.slice(0, 60)}</span>}
         </div>
+        {validationIssues.length > 0 && (
+          <div className="mt-2 rounded border border-[#6f3434] bg-[#261819] p-2 text-[10px] text-[#ff9a9a]">
+            {validationIssues[0].message}
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
@@ -64,12 +81,34 @@ export default function NodeDetail() {
 
       {/* Content */}
       <div className="p-3 flex-1">
+        {validationIssues.length > 0 && (
+          <div className="mb-3 space-y-1 rounded border border-[#6f3434] bg-[#1f1516] p-2 text-[10px] text-[#ffb0b0]">
+            {validationIssues.map((issue, index) => (
+              <div key={`${issue.code}-${issue.field || ''}-${index}`}>
+                <span className="font-semibold">{issue.code}</span>
+                {issue.field && <span className="ml-1 text-[#d98a8a]">{issue.field}</span>}
+                <div className="mt-0.5 text-[#f0b4b4]">{issue.message}</div>
+              </div>
+            ))}
+          </div>
+        )}
         {tab === 'params' && Object.entries(node.params).map(([name, spec]) => {
           const options = paramOptions(name, spec);
           return (
           <div key={name} className="mb-3">
-            <div className="text-[10px] text-[#a7a7a7] mb-1">{name}</div>
-            {options ? (
+            <div className="text-[10px] text-[#a7a7a7] mb-1">
+              {name}
+              {spec.required && <span className="ml-1 text-[#ff8c8c]">*</span>}
+            </div>
+            {name === 'draft_folder' ? (
+              <button
+                type="button"
+                onClick={() => chooseDirectoryParam(name).catch(console.error)}
+                className="w-full truncate rounded border border-[#3c3d42] bg-[#151617] px-2 py-1.5 text-left text-xs text-[#f2f2f2] outline-none hover:border-[var(--accent)]"
+              >
+                {pvs[name] !== undefined ? pvs[name] : spec.default || (language === 'zh' ? '选择目录' : 'Choose folder')}
+              </button>
+            ) : options ? (
               <select
                 value={spec.param_type === 'bool' ? String(Boolean(pvs[name] !== undefined ? pvs[name] : spec.default)) : pvs[name] !== undefined ? pvs[name] : spec.default ?? ''}
                 onChange={(e) => updateNodeParam(node.id, name, spec.param_type === 'bool' ? e.target.value === 'true' : e.target.value)}
@@ -122,9 +161,23 @@ export default function NodeDetail() {
           </>
         )}
         {tab === 'logs' && (
-          <div className="text-[10px] text-[#77787d]">
-            {node.status === 'failed' && node.error ? (
-              <div className="text-[#ff7777] whitespace-pre-wrap">{node.error}</div>
+          <div className="space-y-2 text-[10px] text-[#77787d]">
+            {logs.length > 0 ? (
+              logs.map((entry, index) => (
+                <div key={`${entry.created_at || ''}-${index}`} className="rounded border border-[#33343a] bg-[#151617] p-2">
+                  <div className={entry.level === 'error' ? 'mb-1 font-semibold text-[#ff7777]' : 'mb-1 font-semibold text-[#9cbcff]'}>
+                    {entry.level}
+                    {entry.created_at && <span className="ml-2 font-normal text-[#77787d]">{new Date(entry.created_at).toLocaleTimeString()}</span>}
+                  </div>
+                  <pre className="log-text max-h-96 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] leading-4 text-[#d7d7d7]">
+                    {entry.message}
+                  </pre>
+                </div>
+              ))
+            ) : node.status === 'failed' && node.error ? (
+              <pre className="log-text overflow-auto whitespace-pre-wrap break-words rounded border border-[#4a2b2b] bg-[#1d1515] p-2 font-mono text-[10px] leading-4 text-[#ff7777]">
+                {node.error}
+              </pre>
             ) : (
               <div>{tr(language, 'detail.noLogs')}</div>
             )}

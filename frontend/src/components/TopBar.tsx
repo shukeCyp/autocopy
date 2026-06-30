@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useStore } from '../stores/useStore';
 import { apiPost, apiGet, apiPut, createWs } from '../api/client';
-import { t, type Language } from '../i18n';
+import type { Task } from '../types';
+import { nodeLabel, t, type Language } from '../i18n';
 
 export default function TopBar() {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
@@ -13,17 +14,23 @@ export default function TopBar() {
     nodes,
     edges,
     activeTemplateId,
-    activeTemplateBuiltin,
     workflowName,
+    executingNodeId,
     setWorkflowName,
     setCurrentTaskId,
     setTasks,
     setTemplates,
     setActiveTemplateId,
-    setActiveTemplateBuiltin,
     language,
     setLanguage,
   } = useStore();
+  const currentNode = nodes.find((node) => node.id === executingNodeId)
+    || nodes.find((node) => node.status === 'running');
+  const currentNodePrefix = running
+    ? (language === 'zh' ? '当前节点' : 'Current')
+    : currentNode?.status === 'failed'
+      ? (language === 'zh' ? '失败节点' : 'Failed')
+      : (language === 'zh' ? '最后节点' : 'Last');
 
   const buildGraphJson = useCallback(() => {
     const graphNodes = useStore.getState().nodes;
@@ -56,18 +63,17 @@ export default function TopBar() {
       const description = existingTemplate?.description || '';
       let saved: { id: string; name: string };
 
-      if (activeTemplateId && !activeTemplateBuiltin) {
+      if (activeTemplateId) {
         saved = await apiPut<{ id: string; name: string }>(`/templates/${activeTemplateId}`, { name, description, graph_json });
       } else {
         saved = await apiPost<{ id: string; name: string }>('/templates', {
-          name: activeTemplateBuiltin ? `${name} Copy` : name,
+          name,
           description,
           graph_json,
         });
       }
 
       setActiveTemplateId(saved.id);
-      setActiveTemplateBuiltin(false);
       const templates = await apiGet<any[]>('/templates');
       setTemplates(templates);
       setSaveStatus('saved');
@@ -78,11 +84,9 @@ export default function TopBar() {
       window.setTimeout(() => setSaveStatus('idle'), 2200);
     }
   }, [
-    activeTemplateBuiltin,
     activeTemplateId,
     buildGraphJson,
     saveStatus,
-    setActiveTemplateBuiltin,
     setActiveTemplateId,
     setTemplates,
     workflowName,
@@ -99,7 +103,7 @@ export default function TopBar() {
     if (!nextName || nextName === displayName) return;
     setWorkflowName(nextName);
 
-    if (!activeTemplateId || activeTemplateBuiltin) return;
+    if (!activeTemplateId) return;
     try {
       const graph_json = buildGraphJson();
       const existingTemplate = useStore.getState().templates.find((template) => template.id === activeTemplateId);
@@ -145,6 +149,7 @@ export default function TopBar() {
     };
 
     setRunning(true);
+    useStore.getState().setExecutingNodeId(null);
     try {
       const { task_id } = await apiPost<{ task_id: string }>('/graph/run', {
         graph_json: JSON.stringify(graph),
@@ -152,17 +157,81 @@ export default function TopBar() {
       });
       setCurrentTaskId(task_id);
 
-      const ws = createWs(task_id, (event) => {
-        if (event.type === 'node_status') {
-          useStore.getState().updateNodeStatus(event.node_id, event.data.status);
+      let finished = false;
+      let pollTimer: number | undefined;
+      let ws: WebSocket | null = null;
+
+      const applyTaskSnapshot = (task: Task) => {
+        const state = useStore.getState();
+        if (task.current_node_id) {
+          state.setExecutingNodeId(task.current_node_id);
+          if (task.status === 'running') {
+            state.updateNodeStatus(task.current_node_id, 'running');
+          } else if (task.status === 'failed') {
+            state.updateNodeStatus(task.current_node_id, 'failed', task.error);
+          }
+        }
+        try {
+          const result = JSON.parse(task.result_json || '{}');
+          if (Array.isArray(result.node_results)) {
+            state.applyNodeResults(result.node_results);
+          }
+        } catch {}
+      };
+
+      const stopPolling = () => {
+        if (pollTimer !== undefined) {
+          window.clearInterval(pollTimer);
+          pollTimer = undefined;
+        }
+      };
+
+      const finishFromTask = (task?: Task) => {
+        if (finished) return;
+        finished = true;
+        if (task) applyTaskSnapshot(task);
+        stopPolling();
+        setRunning(false);
+        ws?.close();
+        apiGet<any[]>('/tasks').then((tasks) => setTasks(tasks));
+      };
+
+      const refreshTaskSnapshot = async () => {
+        const task = await apiGet<Task>(`/tasks/${task_id}`);
+        applyTaskSnapshot(task);
+        if (task.status === 'done' || task.status === 'failed') {
+          finishFromTask(task);
+        }
+      };
+
+      pollTimer = window.setInterval(() => {
+        refreshTaskSnapshot().catch(() => {});
+      }, 700);
+
+      ws = createWs(task_id, (event) => {
+        if (event.type === 'node_executing') {
+          const state = useStore.getState();
+          state.setExecutingNodeId(event.node_id);
+          state.updateNodeStatus(event.node_id, 'running');
+        } else if (event.type === 'node_status') {
+          const state = useStore.getState();
+          state.updateNodeStatus(event.node_id, event.data.status);
         } else if (event.type === 'node_done') {
-          useStore.getState().updateNodeStatus(event.node_id, 'done', undefined, event.data.outputs);
+          const state = useStore.getState();
+          state.updateNodeStatus(event.node_id, 'done', undefined, event.data.outputs);
         } else if (event.type === 'node_error') {
-          useStore.getState().updateNodeStatus(event.node_id, 'failed', event.data.error);
+          const state = useStore.getState();
+          state.updateNodeStatus(event.node_id, 'failed', event.data.error, undefined, event.data.validation_issues || []);
+          state.setExecutingNodeId(event.node_id);
+        } else if (event.type === 'log' && event.node_id) {
+          useStore.getState().appendNodeLog(event.node_id, event.data.level || 'info', event.data.message || '');
         } else if (event.type === 'graph_complete' || event.type === 'graph_error') {
-          setRunning(false);
-          ws.close();
-          apiGet<any[]>('/tasks').then((tasks) => setTasks(tasks));
+          if (event.type === 'graph_error') {
+            useStore.getState().setExecutingNodeId(null);
+          }
+          apiGet<Task>(`/tasks/${task_id}`).then((task) => {
+            finishFromTask(task);
+          }).catch(() => finishFromTask());
         }
       });
     } catch (e) {
@@ -212,6 +281,14 @@ export default function TopBar() {
       >
         {running ? t(language, 'top.queueRunning') : t(language, 'top.queuePrompt')}
       </button>
+      {currentNode && (
+        <div className={`topbar-running-node ${running ? 'running' : 'last'}`}>
+          <span className="topbar-running-dot" />
+          <span className="truncate">
+            {currentNodePrefix}: {nodeLabel(language, currentNode.type, currentNode.label, currentNode.id)}
+          </span>
+        </div>
+      )}
       <button
         onClick={handleSave}
         disabled={saveStatus === 'saving'}

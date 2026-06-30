@@ -20,7 +20,7 @@ class TtsSrtResult:
 
 
 def run(cmd, quiet=False):
-    kwargs = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL} if quiet else {}
+    kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE} if quiet else {}
     subprocess.run(cmd, check=True, **kwargs)
 
 
@@ -113,12 +113,12 @@ def parse_srt_time(value):
     return ((int(h) * 60 + int(m)) * 60 + int(s)) * 1000 + int(ms)
 
 
-def vad_segments(wav, vad_model, threshold=0.25, min_speech_ms=30, min_silence_ms=250):
+def vad_segments(wav, vad_model, threshold=0.25, min_speech_ms=10, min_silence_ms=50):
     cp = subprocess.run([
         "whisper-vad-speech-segments", "-np",
         "-vm", str(vad_model),
         "-vt", str(threshold),
-        "-vmsd", str(min_speech_ms),
+        "--vad-min-speech-duration-ms", str(min_speech_ms),
         "-vsd", str(min_silence_ms),
         "-f", str(wav),
     ], check=True, capture_output=True, text=True)
@@ -131,7 +131,7 @@ def vad_segments(wav, vad_model, threshold=0.25, min_speech_ms=30, min_silence_m
     return segments
 
 
-def transcribe_vad_entries(wav, model, vad_model, prompt, work, threshold=0.25, min_speech_ms=30, min_silence_ms=250):
+def transcribe_vad_entries(wav, model, vad_model, prompt, work, threshold=0.25, min_speech_ms=10, min_silence_ms=50):
     entries = []
     for i, (start, end) in enumerate(vad_segments(wav, vad_model, threshold, min_speech_ms, min_silence_ms)):
         piece = work / f"vad_{i:04d}.wav"
@@ -210,8 +210,8 @@ def extract_tts_srt(
     whisper_model=Path("model/ggml-large-v3-turbo.bin"),
     vad_model=Path("model/ggml-silero-v6.2.0.bin"),
     vad_threshold=0.25,
-    min_speech_ms=30,
-    min_silence_ms=250,
+    min_speech_ms=10,
+    min_silence_ms=50,
     min_word_overlap=0.85,
     refresh_gemini=False,
     output_dir=None,

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from app.pipeline.node import Node
 from app.pipeline.types import NodeResult, NodeStatus, PortSpec, PortType, ParamSpec
+from app.pipeline.validation import PathExistsRule, RequiredParamOrEnvRule
 
 
 def resolve_model_path(value: str) -> Path:
@@ -31,16 +32,35 @@ class TTSExtract(Node):
         }
         self.params = {
             "api_key": ParamSpec(name="api_key", param_type="string", default=""),
-            "gemini_model": ParamSpec(name="gemini_model", param_type="string", default="gemini-3.5-flash"),
-            "base_url": ParamSpec(name="base_url", param_type="string", default="https://yunwu.ai"),
-            "whisper_model": ParamSpec(name="whisper_model", param_type="string", default="ggml-large-v3-turbo.bin"),
-            "vad_model": ParamSpec(name="vad_model", param_type="string", default="ggml-silero-v6.2.0.bin"),
+            "gemini_model": ParamSpec(name="gemini_model", param_type="string", default="gemini-3.5-flash", required=True),
+            "base_url": ParamSpec(name="base_url", param_type="string", default="https://yunwu.ai", required=True),
+            "whisper_model": ParamSpec(name="whisper_model", param_type="string", default="ggml-large-v3-turbo.bin", required=True),
+            "vad_model": ParamSpec(name="vad_model", param_type="string", default="ggml-silero-v6.2.0.bin", required=True),
             "vad_threshold": ParamSpec(name="vad_threshold", param_type="float", default=0.25),
-            "min_speech_ms": ParamSpec(name="min_speech_ms", param_type="int", default=30),
-            "min_silence_ms": ParamSpec(name="min_silence_ms", param_type="int", default=250),
+            "min_speech_ms": ParamSpec(name="min_speech_ms", param_type="int", default=10),
+            "min_silence_ms": ParamSpec(name="min_silence_ms", param_type="int", default=50),
             "min_word_overlap": ParamSpec(name="min_word_overlap", param_type="float", default=0.85),
             "refresh_gemini": ParamSpec(name="refresh_gemini", param_type="bool", default=False),
         }
+
+    def custom_validation_rules(self):
+        return [
+            RequiredParamOrEnvRule(param_name="api_key", env_names=("YUNWU_API_KEY",)),
+            PathExistsRule(
+                field="whisper_model",
+                source="param",
+                code="missing_model",
+                label="Whisper model",
+                resolver=resolve_model_path,
+            ),
+            PathExistsRule(
+                field="vad_model",
+                source="param",
+                code="missing_model",
+                label="VAD model",
+                resolver=resolve_model_path,
+            ),
+        ]
 
     async def run(self, inputs, params, work_dir):
         from app.copied.tts_srt_extractor import extract_tts_srt

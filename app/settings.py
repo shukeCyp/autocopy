@@ -32,8 +32,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     },
     "vad": {
         "threshold": 0.25,
-        "min_speech_ms": 30,
-        "min_silence_ms": 250,
+        "min_speech_ms": 10,
+        "min_silence_ms": 50,
     },
     "video_match": {
         "gpu_enabled": False,

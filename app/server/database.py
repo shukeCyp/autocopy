@@ -26,6 +26,8 @@ async def _ensure_schema(db: aiosqlite.Connection) -> None:
             status TEXT NOT NULL DEFAULT 'pending',
             graph_json TEXT NOT NULL DEFAULT '{}',
             current_step TEXT NOT NULL DEFAULT '',
+            current_node_id TEXT NOT NULL DEFAULT '',
+            current_node_label TEXT NOT NULL DEFAULT '',
             result_json TEXT NOT NULL DEFAULT '{}',
             error TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL,
@@ -47,6 +49,12 @@ async def _ensure_schema(db: aiosqlite.Connection) -> None:
     column_names = {row["name"] for row in await columns.fetchall()}
     if "description" not in column_names:
         await db.execute("ALTER TABLE templates ADD COLUMN description TEXT NOT NULL DEFAULT ''")
+    task_columns = await db.execute("PRAGMA table_info(tasks)")
+    task_column_names = {row["name"] for row in await task_columns.fetchall()}
+    if "current_node_id" not in task_column_names:
+        await db.execute("ALTER TABLE tasks ADD COLUMN current_node_id TEXT NOT NULL DEFAULT ''")
+    if "current_node_label" not in task_column_names:
+        await db.execute("ALTER TABLE tasks ADD COLUMN current_node_label TEXT NOT NULL DEFAULT ''")
     await db.commit()
 
 
@@ -145,7 +153,7 @@ async def save_settings(settings: dict) -> dict:
 
 async def list_templates() -> list[dict]:
     db = await get_db()
-    rows = await db.execute("SELECT id, name, description, created_at FROM templates ORDER BY created_at DESC")
+    rows = await db.execute("SELECT id, name, description, graph_json, created_at FROM templates ORDER BY created_at DESC")
     results = [dict(row) for row in await rows.fetchall()]
     await db.close()
     return results
@@ -168,6 +176,25 @@ async def save_template(name: str, graph_json: str, description: str = "") -> di
     db = await get_db()
     await db.execute(
         "INSERT INTO templates (id, name, description, graph_json, created_at) VALUES (?, ?, ?, ?, ?)",
+        (template_id, name, description, graph_json, now),
+    )
+    await db.commit()
+    await db.close()
+    return await get_template(template_id)
+
+
+async def upsert_template(template_id: str, name: str, graph_json: str, description: str = "") -> dict:
+    now = now_iso()
+    db = await get_db()
+    await db.execute(
+        """
+        INSERT INTO templates (id, name, description, graph_json, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            description = excluded.description,
+            graph_json = excluded.graph_json
+        """,
         (template_id, name, description, graph_json, now),
     )
     await db.commit()

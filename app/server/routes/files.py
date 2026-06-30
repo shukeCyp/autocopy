@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
+import sys
 import uuid
 from pathlib import Path
 
@@ -15,6 +17,39 @@ MODEL_DIR = Path("model")
 def _safe_name(filename: str) -> str:
     name = Path(filename or "upload.bin").name
     return name.replace("/", "_").replace("\\", "_")
+
+
+def select_directory() -> Path | None:
+    if sys.platform == "darwin":
+        try:
+            result = subprocess.run(
+                [
+                    "osascript",
+                    "-e",
+                    'POSIX path of (choose folder with prompt "选择剪映草稿目录")',
+                ],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except subprocess.CalledProcessError:
+            return None
+        selected = result.stdout.strip()
+        return Path(selected) if selected else None
+
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        selected = filedialog.askdirectory(title="选择剪映草稿目录")
+        root.destroy()
+    except Exception as exc:
+        raise RuntimeError(f"directory picker unavailable: {exc}") from exc
+    return Path(selected) if selected else None
 
 
 @router.post("/upload")
@@ -34,6 +69,15 @@ async def upload_file(file: UploadFile = File(...)):
         "name": file.filename,
         "size": target.stat().st_size,
     }
+
+
+@router.post("/select-directory")
+async def select_directory_endpoint():
+    try:
+        selected = select_directory()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"path": str(selected.expanduser().resolve()) if selected else ""}
 
 
 @router.get("/models")

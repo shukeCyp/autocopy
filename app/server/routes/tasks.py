@@ -37,6 +37,12 @@ async def api_rerun_task(task_id: str):
     if task is None:
         raise HTTPException(status_code=404, detail="task not found")
 
-    await update_task(task_id, status="pending", error="")
+    await update_task(
+        task_id,
+        status="pending",
+        error="",
+        current_node_id="",
+        current_node_label="",
+    )
     asyncio.create_task(_run_graph(task_id, task["graph_json"]))
     return {"ok": True, "task_id": task_id}

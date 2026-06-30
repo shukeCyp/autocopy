@@ -113,6 +113,50 @@ class TestNode:
         assert "offset" in node.params
         assert node.params["offset"].default == 0
 
+    def test_node_schema_serializes_runtime_contract(self):
+        node = AddNode(id="add_1", label="Adder", x=12, y=34)
+
+        schema = node.schema()
+
+        assert schema["id"] == "Add"
+        assert schema["type"] == "Add"
+        assert schema["label"] == "Adder"
+        assert schema["inputs"]["a"]["port_type"] == "json_data"
+        assert schema["outputs"]["sum"]["port_type"] == "json_data"
+        assert schema["params"]["offset"]["param_type"] == "int"
+        assert schema["params"]["offset"]["default"] == 0
+
+    def test_validate_reports_missing_required_param(self):
+        class RequiredParamNode(AddNode):
+            node_type = "RequiredParam"
+
+            def _define(self):
+                super()._define()
+                self.params["name"] = ParamSpec(name="name", param_type="string", default="", required=True)
+
+        node = RequiredParamNode(id="required")
+
+        issues = node.validate({"a": 1, "b": 2}, {"offset": 0, "name": ""})
+
+        assert [issue.to_dict() for issue in issues] == [
+            {
+                "level": "error",
+                "code": "missing_param",
+                "message": "name is required",
+                "field": "name",
+                "node_id": "required",
+            }
+        ]
+
+    def test_validate_reports_missing_required_input(self):
+        node = AddNode(id="add")
+
+        issues = node.validate({"a": 1}, {"offset": 0})
+
+        assert issues[0].code == "missing_input"
+        assert issues[0].field == "b"
+        assert issues[0].node_id == "add"
+
     def test_node_position(self):
         node = AddNode(x=100, y=200)
         assert node.x == 100
@@ -234,3 +278,22 @@ class TestNode:
         assert node.inputs["a"].port_type == PortType.JSON_DATA
         assert node.outputs["sum"].port_type == PortType.JSON_DATA
         assert node.params["offset"].default == 0
+
+    def test_from_dict_preserves_serialized_param_defaults(self):
+        d = {
+            "id": "n1",
+            "type": "Add",
+            "label": "adder",
+            "x": 0,
+            "y": 0,
+            "status": "idle",
+            "inputs": {},
+            "outputs": {},
+            "params": {
+                "offset": {"name": "offset", "param_type": "int", "default": 10},
+            },
+        }
+
+        node = Node.from_dict(d)
+
+        assert node.params["offset"].default == 10

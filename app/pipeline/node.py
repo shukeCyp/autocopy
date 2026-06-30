@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from app.pipeline.types import NodeResult, NodeStatus, ParamSpec, PortSpec
+from app.pipeline.types import NodeResult, NodeStatus, ParamSpec, PortSpec, ValidationIssue
+from app.pipeline.validation import RequiredInputRule, RequiredParamRule, ValidationRule
 
 
 class Node(ABC):
@@ -83,6 +84,42 @@ class Node(ABC):
         raw = json.dumps(payload, sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(raw.encode()).hexdigest()
 
+    def schema(self) -> dict[str, Any]:
+        """Return the node's reusable runtime contract for frontend/editor use."""
+        return {
+            "id": self.node_type,
+            "type": self.node_type,
+            "label": self.label,
+            "inputs": {name: spec.to_dict() for name, spec in self.inputs.items()},
+            "outputs": {name: spec.to_dict() for name, spec in self.outputs.items()},
+            "params": {name: spec.to_dict() for name, spec in self.params.items()},
+        }
+
+    def validation_rules(self) -> list[ValidationRule]:
+        """Rules shared by every node. Subclasses append domain rules."""
+        return [
+            RequiredInputRule(),
+            RequiredParamRule(),
+            *self.custom_validation_rules(),
+        ]
+
+    def custom_validation_rules(self) -> list[ValidationRule]:
+        return []
+
+    def validate(self, inputs: dict[str, Any], params: dict[str, Any]) -> list[ValidationIssue]:
+        issues: list[ValidationIssue] = []
+        for rule in self.validation_rules():
+            issues.extend(rule.validate(self, inputs, params))
+        issues.extend(self.validate_custom(inputs, params))
+        return issues
+
+    def validate_custom(
+        self,
+        inputs: dict[str, Any],
+        params: dict[str, Any],
+    ) -> list[ValidationIssue]:
+        return []
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
@@ -117,6 +154,18 @@ class Node(ABC):
             y=d.get("y", 0),
         )
         node.status = NodeStatus(d.get("status", "idle"))
+        for name, saved_spec in d.get("params", {}).items():
+            if name not in node.params or not isinstance(saved_spec, dict):
+                continue
+            current = node.params[name]
+            node.params[name] = ParamSpec(
+                name=current.name,
+                param_type=current.param_type,
+                default=saved_spec.get("default", current.default),
+                description=current.description,
+                options=current.options,
+                required=saved_spec.get("required", current.required),
+            )
         return node
 
     @classmethod
@@ -126,3 +175,7 @@ class Node(ABC):
 
 
 _NODE_REGISTRY: dict[str, type[Node]] = {}
+
+
+def registered_node_classes() -> dict[str, type[Node]]:
+    return dict(_NODE_REGISTRY)

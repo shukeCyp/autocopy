@@ -27,6 +27,7 @@ htmlcov/
 # Project data
 .data/
 .model/
+model/
 output/
 source_cache/
 test_pyscene/

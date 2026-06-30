@@ -24,6 +24,7 @@ import { useStore } from '../stores/useStore';
 import { apiGet, apiPost, apiPut, apiDelete } from '../api/client';
 import type { Task, Template, NodeData, EdgeData } from '../types';
 import { nodeLabel, t as tr } from '../i18n';
+import { NODE_TYPES, cloneDefaultNodeSpec, loadNodeSpecMap } from '../nodeSpecs';
 
 type DrawerTab = 'workflows' | 'tasks' | 'nodes' | 'settings';
 
@@ -34,15 +35,19 @@ const TAB_META: Record<DrawerTab, { icon: React.ReactNode; zh: string; en: strin
   settings: { icon: <SettingOutlined />, zh: '设置', en: 'Settings' },
 };
 
-const NODE_TYPES = ['VideoInput', 'TTSExtract', 'SRTRewrite', 'VideoMatch', 'TTSGenerate', 'VideoCompose', 'JianyingExport'];
-
 const NODE_TYPE_ICONS: Record<string, React.ReactNode> = {
   VideoInput: <VideoCameraOutlined />,
-  TTSExtract: <AudioOutlined />,
+  VideoAudioExtract: <AudioOutlined />,
+  VocalSeparation: <SoundOutlined />,
+  VoiceVAD: <AudioOutlined />,
+  DominantSpeaker: <BranchesOutlined />,
+  SegmentASR: <EditOutlined />,
   SRTRewrite: <EditOutlined />,
   VideoMatch: <BranchesOutlined />,
+  VideoMatchVMF: <BranchesOutlined />,
   TTSGenerate: <SoundOutlined />,
   VideoCompose: <ScissorOutlined />,
+  JianyingMerge: <ExportOutlined />,
   JianyingExport: <ExportOutlined />,
 };
 
@@ -54,12 +59,14 @@ export default function Sidebar() {
   const [workflowMenu, setWorkflowMenu] = useState<{ template: Template; x: number; y: number } | null>(null);
   const [descriptionDialog, setDescriptionDialog] = useState<{ template: Template; value: string; saving: boolean } | null>(null);
   const [sidebarError, setSidebarError] = useState<string>('');
+  const [nodeSpecSamples, setNodeSpecSamples] = useState<Map<string, NodeData>>(new Map());
   const {
     tasks,
     currentTaskId,
     setTasks,
     setCurrentTaskId,
     setGraph,
+    applyNodeResults,
     replaceGraph,
     templates,
     activeTemplateId,
@@ -93,8 +100,12 @@ export default function Sidebar() {
     apiGet<Task[]>('/tasks').then(setTasks).catch(() => {});
   }, [setTasks]);
 
+  useEffect(() => {
+    loadNodeSpecMap().then(setNodeSpecSamples).catch(() => {});
+  }, []);
+
   const templateNodeSamples = useMemo(() => {
-    const samples = new Map<string, NodeData>();
+    const samples = new Map(nodeSpecSamples);
     for (const template of templates) {
       if (!template.graph_json) continue;
       try {
@@ -105,7 +116,12 @@ export default function Sidebar() {
       } catch {}
     }
     return samples;
-  }, [templates]);
+  }, [templates, nodeSpecSamples]);
+
+  const nodeTypes = useMemo(() => {
+    const loaded = Array.from(templateNodeSamples.keys());
+    return loaded.length > 0 ? loaded : NODE_TYPES;
+  }, [templateNodeSamples]);
 
   const loadTemplate = async (template: Template) => {
     setLoadingTemplateId(template.id);
@@ -126,7 +142,7 @@ export default function Sidebar() {
         target_node_id: edge.target_node_id,
         target_port: edge.target_port,
       }));
-      replaceGraph(newNodes, newEdges, template.id, template.builtin, template.name);
+      replaceGraph(newNodes, newEdges, template.id, template.name);
       setCurrentTaskId(null);
     } catch (error) {
       console.error('load template failed:', error);
@@ -144,7 +160,7 @@ export default function Sidebar() {
     const graph_json = JSON.stringify({ nodes: [], edges: [] });
     try {
       const saved = await apiPost<{ id: string; name: string }>('/templates', { name, description: '', graph_json });
-      replaceGraph([], [], saved.id, false, saved.name);
+      replaceGraph([], [], saved.id, saved.name);
       setCurrentTaskId(null);
       await refreshTemplates();
     } catch (error) {
@@ -168,7 +184,7 @@ export default function Sidebar() {
         graph_json: data.graph_json,
       });
       await refreshTemplates();
-      await loadTemplate({ ...template, id: saved.id, name: saved.name, builtin: false, graph_json: data.graph_json });
+      await loadTemplate({ ...template, id: saved.id, name: saved.name, graph_json: data.graph_json });
     } catch (error) {
       console.error('copy workflow failed:', error);
       setSidebarError(tr(language, 'sidebar.workflowCopyFailed'));
@@ -177,7 +193,6 @@ export default function Sidebar() {
 
   const openWorkflowDescriptionDialog = (template: Template) => {
     setWorkflowMenu(null);
-    if (template.builtin) return;
     setDescriptionDialog({ template, value: template.description || '', saving: false });
   };
 
@@ -206,12 +221,11 @@ export default function Sidebar() {
 
   const deleteWorkflow = async (template: Template) => {
     setWorkflowMenu(null);
-    if (template.builtin) return;
     setSidebarError('');
     try {
       await apiDelete(`/templates/${template.id}`);
       if (activeTemplateId === template.id) {
-        replaceGraph([], [], null, false, '');
+        replaceGraph([], [], null, '');
         setCurrentTaskId(null);
       }
       await refreshTemplates();
@@ -235,9 +249,14 @@ export default function Sidebar() {
           target_port: edge.target_port,
         })),
         null,
-        false,
         task.name || task.id
       );
+      try {
+        const result = JSON.parse(data.result_json || '{}');
+        if (Array.isArray(result.node_results)) {
+          applyNodeResults(result.node_results);
+        }
+      } catch {}
     } catch {}
   };
 
@@ -253,8 +272,11 @@ export default function Sidebar() {
 
   const addNode = (nodeType: string) => {
     const sample = templateNodeSamples.get(nodeType);
+    const defaultSpec = cloneDefaultNodeSpec(nodeType);
     const base: NodeData = sample
       ? JSON.parse(JSON.stringify(sample))
+      : defaultSpec
+      ? defaultSpec
       : {
           id: nodeType,
           type: nodeType,
@@ -306,8 +328,7 @@ export default function Sidebar() {
           <span className="min-w-0 flex-1">
             <span className="block truncate text-xs font-semibold">{loadingTemplateId === template.id ? tr(language, 'sidebar.loading') : template.name}</span>
             <span className="block truncate text-[10px] opacity-65">
-              {template.builtin ? `${tr(language, 'sidebar.builtin')} · ` : ''}
-              {template.description || (template.id === 'tts_only' ? tr(language, 'sidebar.ttsOnly') : tr(language, 'sidebar.fullFlow'))}
+              {template.description || tr(language, 'sidebar.fullFlow')}
             </span>
           </span>
         </button>
@@ -322,13 +343,12 @@ export default function Sidebar() {
             <CopyOutlined />
             <span>{tr(language, 'context.duplicate')}</span>
           </button>
-          <button disabled={workflowMenu.template.builtin} onClick={() => openWorkflowDescriptionDialog(workflowMenu.template)}>
+          <button onClick={() => openWorkflowDescriptionDialog(workflowMenu.template)}>
             <EditOutlined />
             <span>{tr(language, 'context.editDescription')}</span>
           </button>
           <button
             className="danger"
-            disabled={workflowMenu.template.builtin}
             onClick={() => deleteWorkflow(workflowMenu.template)}
           >
             <DeleteOutlined />
@@ -413,7 +433,7 @@ export default function Sidebar() {
   const renderNodes = () => (
     <div className="drawer-panel-scroll">
       <div className="drawer-section-head"><span>{label('nodes')}</span></div>
-      {NODE_TYPES.map((nodeType) => (
+      {nodeTypes.map((nodeType) => (
         <button key={nodeType} className="drawer-list-item" onClick={() => addNode(nodeType)}>
           <span className="drawer-list-icon">{NODE_TYPE_ICONS[nodeType] || <NodeIndexOutlined />}</span>
           <span className="min-w-0 flex-1">
